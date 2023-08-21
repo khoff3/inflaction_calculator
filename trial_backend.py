@@ -32,11 +32,12 @@ def get_picks_per_tier(draft_data, expected_values):
                 picks_per_tier[player_position][tier] += 1
             else:
                 picks_per_tier[player_position][tier] = 1
-            
+
+        # Corrected block
         for pos in picks_per_tier:
-            for tier in picks_per_tier[pos]:
-                if tier != tier:  # This checks for nan values
-                    picks_per_tier[pos]['Not Available'] = picks_per_tier[pos].pop(tier)
+            tiers_to_replace = [tier for tier in picks_per_tier[pos] if tier != tier]  # Collect nan tiers
+            for tier in tiers_to_replace:
+                picks_per_tier[pos]['Not Available'] = picks_per_tier[pos].pop(tier)
 
     return picks_per_tier
 
