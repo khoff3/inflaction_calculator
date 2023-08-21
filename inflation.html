@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fantasy Football Draft Inflation Rate</title>
+    <style>
+        .positive { color: green; }
+        .neutral { color: yellow; }
+        .negative { color: red; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Fantasy Football Draft Inflation Rate</h2>
+
+<!-- Adding the form for Draft ID input -->
+<form action="/get_inflation_rate" method="post">
+    <label for="draft_id">Enter Draft ID:</label>
+    <input type="text" id="draft_id" name="draft_id">
+    <input type="submit" value="Get Inflation Rate">
+</form>
+<!-- End of form -->
+
+<h3>Overall Inflation</h3>
+{% if inflation_rates %}
+<p class="{{ 'positive' if overall_inflation > 0 else ('neutral' if overall_inflation == 0 else 'negative') }}">Overall Inflation: {{ overall_inflation }}%</p>
+{% endif %}
+
+<h3>Positional Inflation</h3>
+{% if 'positional' in inflation_rates %}
+<table>
+    <tr>
+        <th>Position</th>
+        <th>Inflation (%)</th>
+        <th>Number of Picks</th>
+    </tr>
+    {% for pos, rate in inflation_rates['positional'].items() %}
+    <tr>
+        <td>{{ pos }}</td>
+        <td class="{{ 'positive' if rate > 0 else ('neutral' if rate == 0 else 'negative') }}">{{ rate }}%</td>
+        <td>{{ total_picks.get(pos, 0) }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p>No positional data available.</p>
+{% endif %}
+
+<h3>Tiered Inflation</h3>
+{% for pos, tiers in picks_per_tier.items() %}
+<h4>{{ pos }}</h4>
+{% if 'tiered' in inflation_rates and inflation_rates['tiered'].get(pos) %}
+<table>
+    <tr>
+        <th>Tier</th>
+        <th>Inflation (%)</th>
+        <th>Number of Picks</th>
+    </tr>
+    {% for tier, rate in inflation_rates['tiered'][pos].items() %}
+    <tr>
+    <td>{{ 'Not Available' if tier != tier else tier }}</td>
+        <td>{{ tier }}</td>
+        <td class="{{ 'positive' if rate > 0 else ('neutral' if rate == 0 else 'negative') }}">{{ rate }}%</td>
+        <td>{{ picks_per_tier[pos][tier] or 0 }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p>No tiered data available for {{ pos }}.</p>
+{% endif %}
+{% endfor %}
+
+<h3>Draft ID: {{ draft_id }}</h3>
+
+</body>
+</html>
