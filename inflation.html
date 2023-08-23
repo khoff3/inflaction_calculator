@@ -1,82 +1,170 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fantasy Football Draft Inflation Rate</title>
     <style>
-        .positive { color: green; }
-        .neutral { color: yellow; }
-        .negative { color: red; }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        table, th, td {
-            border: 1px solid black;
-        }
+        body { font-size: 0.9rem; }
+        h1, h2, h3 { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
+        th, td { padding: 0.2rem 0.5rem; border: 1px solid #ddd; text-align: center; }
+        .mild-negative { background-color: #C7FFC7; }
+        .moderate-negative { background-color: #8FFF8F; }
+        .severe-negative { background-color: #4AFF4A; }
+        .mild-positive { background-color: #FFC7C7; }
+        .moderate-positive { background-color: #FF8F8F; }
+        .severe-positive { background-color: #FF4A4A; }
+        .neutral { background-color: #FFFFA3; }
+        .tiered-inflation { display: flex; flex-wrap: wrap; justify-content: space-between; }
+        .tiered-inflation section { flex: 1; min-width: 20%; border: 1px solid #e0e0e0; padding: 0.5rem; margin-right: 0.5rem; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); }
+        .tiered-inflation section:nth-child(even) { background-color: #f7f7f7; }
+        .severe-overpayment { background-color: #FF4A4A; }
+        .moderate-overpayment { background-color: #FF8F8F; }
+        .mild-overpayment { background-color: #FFC7C7; }
+        .neutral { background-color: #F2F2F2; }
+        .mild-savings { background-color: #C7FFC7; }
+        .moderate-savings { background-color: #8FFF8F; }
+        .severe-savings { background-color: #4AFF4A; }
+        h3 { font-weight: bold; }
     </style>
 </head>
 <body>
+    <h1>Fantasy Football Draft Inflation Rate</h1>
+    <form action="/get_inflation_rate" method="post">
+        <label for="draft_id">Enter Draft ID:</label>
+        <input type="text" id="draft_id" name="draft_id" value="{{ draft_id }}">
+        <input type="submit" value="Submit">
+    </form>
 
-<h2>Fantasy Football Draft Inflation Rate</h2>
+    <h2>Overall Inflation</h2>
+    <p>Overall Inflation: {{ "{:.2f}%".format(overall_inflation * 100) }}</p>
 
-<!-- Adding the form for Draft ID input -->
-<form action="/get_inflation_rate" method="post">
-    <label for="draft_id">Enter Draft ID:</label>
-    <input type="text" id="draft_id" name="draft_id">
-    <input type="submit" value="Get Inflation Rate">
-</form>
-<!-- End of form -->
+    <h2>Positional Inflation</h2>
+    <table>
+        <tr>
+            <th>Position</th>
+            <th>Inflation (%)</th>
+            <th>Number of Picks</th>
+        </tr>
+        {% for position, inflation in positional_inflation.items() %}
+        <tr>
+            <td>{{ position }}</td>
+            <td class="{{ get_color_class(inflation) }}">{{ "{:.2f}%".format(inflation * 100) }}</td>
+            <td>{{ total_picks[position] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
 
-<h3>Overall Inflation</h3>
-{% if inflation_rates %}
-<p class="{{ 'positive' if overall_inflation > 0 else ('neutral' if overall_inflation == 0 else 'negative') }}">Overall Inflation: {{ overall_inflation }}%</p>
-{% endif %}
+    <h2>Tiered Inflation</h2>
+    <div class="tiered-inflation">
+        <section>
+            <h3>QB</h3>
+            <table>
+                <tr>
+                    <th>Tier</th>
+                    <th>Inflation (%)</th>
+                    <th>Picks</th>
+                    <th>DOE ($)</th>
+                </tr>
+                {% for tier in range(1, 5) %}
+                <tr>
+                    <td>{{ tier }}</td>
+                    <td class="{{ get_color_class(tiered_inflation['QB'].get(tier, 0)) }}">{{ "{:.2f}%".format(tiered_inflation['QB'].get(tier, 0)*100) }}</td>
+                    <td>{{ picks_per_tier['QB'][tier] }}</td>
+                    {% if 'QB' in doe_values %}
+                        <td class="{{ get_color_class(doe_values['QB'].get(tier, 0)) }}">{{ "${:.2f}".format(doe_values['QB'].get(tier, 0)) }}</td>
+                    {% else %}
+                        <td class="{{ get_color_class(0) }}">{{ "${:.2f}".format(0) }}</td>
+                    {% endif %}
+                                </tr>
+                {% endfor %}
+            </table>
+        </section>
 
-<h3>Positional Inflation</h3>
-{% if 'positional' in inflation_rates %}
-<table>
-    <tr>
-        <th>Position</th>
-        <th>Inflation (%)</th>
-        <th>Number of Picks</th>
-    </tr>
-    {% for pos, rate in inflation_rates['positional'].items() %}
-    <tr>
-        <td>{{ pos }}</td>
-        <td class="{{ 'positive' if rate > 0 else ('neutral' if rate == 0 else 'negative') }}">{{ rate }}%</td>
-        <td>{{ total_picks.get(pos, 0) }}</td>
-    </tr>
-    {% endfor %}
-</table>
-{% else %}
-<p>No positional data available.</p>
-{% endif %}
-
-<h3>Tiered Inflation</h3>
-{% for pos, tiers in picks_per_tier.items() %}
-<h4>{{ pos }}</h4>
-{% if 'tiered' in inflation_rates and inflation_rates['tiered'].get(pos) %}
-<table>
-    <tr>
-        <th>Tier</th>
-        <th>Inflation (%)</th>
-        <th>Number of Picks</th>
-    </tr>
-    {% for tier, rate in inflation_rates['tiered'][pos].items() %}
-    <tr>
-    <td>{{ 'Not Available' if tier != tier else tier }}</td>
-        <td>{{ tier }}</td>
-        <td class="{{ 'positive' if rate > 0 else ('neutral' if rate == 0 else 'negative') }}">{{ rate }}%</td>
-        <td>{{ picks_per_tier[pos][tier] or 0 }}</td>
-    </tr>
-    {% endfor %}
-</table>
-{% else %}
-<p>No tiered data available for {{ pos }}.</p>
-{% endif %}
-{% endfor %}
-
-<h3>Draft ID: {{ draft_id }}</h3>
-
+        <section>
+            <h3>RB</h3>
+            <table>
+                <tr>
+                    <th>Tier</th>
+                    <th>Inflation (%)</th>
+                    <th>Picks</th>
+                    <th>DOE ($)</th>
+                </tr>
+                {% for tier in range(1, 8) %}
+                <tr>
+                    <td>{{ tier }}</td>
+                    {% if tier in tiered_inflation['RB'] %}
+                        <td class="{{ get_color_class(tiered_inflation['RB'][tier]) }}">{{ "{:.2f}%".format(tiered_inflation['RB'][tier]*100) }}</td>
+                    {% else %}
+                        <td class="{{ get_color_class(0) }}">{{ "{:.2f}%".format(0) }}</td>
+                    {% endif %}
+                    <td>{{ picks_per_tier['RB'][tier] }}</td>
+                    {% if tier in doe_values['RB'] %}
+                        <td class="{{ get_color_class(doe_values['RB'][tier]) }}">{{ "${:.2f}".format(doe_values['RB'][tier]) }}</td>
+                    {% else %}
+                        <td class="{{ get_color_class(0) }}">{{ "${:.2f}".format(0) }}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}                
+            </table>
+        </section>
+        
+        <section>
+            <h3>WR</h3>
+            <table>
+                <tr>
+                    <th>Tier</th>
+                    <th>Inflation (%)</th>
+                    <th>Picks</th>
+                    <th>DOE ($)</th>
+                </tr>
+                {% for tier in range(1, 9) %}
+                <tr>
+                    <td>{{ tier }}</td>
+                    {% if tier in tiered_inflation['WR'] %}
+                        <td class="{{ get_color_class(tiered_inflation['WR'][tier]) }}">{{ "{:.2f}%".format(tiered_inflation['WR'][tier]*100) }}</td>
+                    {% else %}
+                        <td class="{{ get_color_class(0) }}">{{ "{:.2f}%".format(0) }}</td>
+                    {% endif %}
+                    <td>{{ picks_per_tier['WR'].get(tier, 0) }}</td>
+                    {% if tier in doe_values['WR'] %}
+                        <td class="{{ get_color_class(doe_values['WR'][tier]) }}">{{ "${:.2f}".format(doe_values['WR'][tier]) }}</td>
+                    {% else %}
+                        <td class="{{ get_color_class(0) }}">{{ "${:.2f}".format(0) }}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}                            
+            </table>
+        </section>
+        
+        <section>
+            <h3>TE</h3>
+            <table>
+                <tr>
+                    <th>Tier</th>
+                    <th>Inflation (%)</th>
+                    <th>Picks</th>
+                    <th>DOE ($)</th>
+                </tr>
+                {% for tier in range(1, 4) %}
+                <tr>
+                    <td>{{ tier }}</td>
+                    {% if tier in tiered_inflation['TE'] %}
+                        <td class="{{ get_color_class(tiered_inflation['TE'][tier]) }}">{{ "{:.2f}%".format(tiered_inflation['TE'][tier]*100) }}</td>
+                    {% else %}
+                        <td class="{{ get_color_class(0) }}">{{ "{:.2f}%".format(0) }}</td>
+                    {% endif %}
+                    <td>{{ picks_per_tier['TE'].get(tier, 0) }}</td>
+                    {% if tier in doe_values['TE'] %}
+                        <td class="{{ get_color_class(doe_values['TE'][tier]) }}">{{ "${:.2f}".format(doe_values['TE'][tier]) }}</td>
+                    {% else %}
+                        <td class="{{ get_color_class(0) }}">{{ "${:.2f}".format(0) }}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </table>
+        </section>
+        
 </body>
 </html>
