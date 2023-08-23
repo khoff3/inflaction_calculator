@@ -13,6 +13,24 @@ EXPECTED_VALUES_PATH = 'C:\\Users\\lasab\\Downloads\\Standard Auction Values (2)
 TIER_COUNT = 10
 # ... (rest of the code)
 
+def get_doe_color_class(doe):
+    if doe is None:
+        return "neutral"
+    if doe >= 10:
+        return "severe-overpayment"
+    elif doe >= 5:
+        return "moderate-overpayment"
+    elif doe >= 1:
+        return "mild-overpayment"
+    elif -1 <= doe <= 0.99:
+        return "neutral"
+    elif -5 <= doe < -1:
+        return "mild-savings"
+    elif -10 <= doe < -5:
+        return "moderate-savings"
+    else:
+        return "severe-savings"
+
 def calculate_inflation_with_logging(draft_data, expected_values):
     unmatched_players = []  # To store players that aren't directly matched
     fuzzy_matches = []  # To store results of fuzzy matching
@@ -62,7 +80,9 @@ def calculate_inflation_with_logging(draft_data, expected_values):
         "unmatched_players": unmatched_players,
         "fuzzy_matches": fuzzy_matches
     }
-    # Calculate tier-based inflation within each position
+
+# Calculate tier-based inflation within each position
+def calculate_positional_tier_inflation(draft_data, expected_values):
     unmatched_tier_players = []
     positional_tier_inflation = {}
     for position in ["QB", "RB", "WR", "TE"]:
@@ -77,9 +97,9 @@ def calculate_inflation_with_logging(draft_data, expected_values):
             tier_spent = sum([int(player["metadata"]["amount"]) for player in tier_players])
             tier_value = sum(
                 [expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Value"].values[0] 
-                 if not expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Value"].empty 
-                 else unmatched_tier_players.append(player["metadata"]["first_name"] + " " + player["metadata"]["last_name"]) or 0 
-                 for player in tier_players]
+                    if not expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Value"].empty 
+                    else unmatched_tier_players.append(player["metadata"]["first_name"] + " " + player["metadata"]["last_name"]) or 0 
+                    for player in tier_players]
             )
             positional_tier_inflation[position][tier] = (tier_spent - tier_value) / tier_value if tier_value != 0 else 0
 
@@ -110,21 +130,26 @@ def calculate_doe_values(draft_data, expected_values, tiered_inflation):
 
     return doe_values
 
+@app.template_filter('get_color_class')
 def get_color_class(value):
+    if value is None:
+        return "neutral"
     if value < -0.15:
         return "severe-negative"
-    elif -0.15 <= value < -0.05:
+    elif value < -0.10:
         return "moderate-negative"
-    elif -0.05 <= value < 0:
+    elif value < -0.05:
         return "mild-negative"
-    elif 0 <= value < 0.05:
-        return "mild-positive"
-    elif 0.05 <= value < 0.15:
-        return "moderate-positive"
-    elif value >= 0.15:
-        return "severe-positive"
-    else:
+    elif value < 0.05:
         return "neutral"
+    elif value < 0.10:
+        return "mild-positive"
+    elif value < 0.15:
+        return "moderate-positive"
+    else:
+        return "severe-positive"
+
+
 
 
 def get_picks_per_tier(draft_data, expected_values):
@@ -286,32 +311,11 @@ def diagnose_mahomes(draft_data, expected_values):
     else:
         print("Patrick Mahomes not found in expected_values.")
 
+
 @app.route('/')
 def index():
-    if inflation_rates:
-        return render_template(
-            'inflation.html', 
-            overall_inflation=inflation_rates['overall'],
-            positional_inflation=inflation_rates['positional'],
-            tiered_inflation=inflation_rates['positional_tiered'],
-            picks_per_tier=picks_per_tier,
-            total_picks=total_picks,
-            get_color_class=get_color_class,
-            doe_values={}
-        )
-    else:
-        # Provide default values if inflation_rates is None
-        return render_template(
-            'inflation.html', 
-            inflation_rates={},
-            overall_inflation=0,
-            positional_inflation={'QB': 0, 'RB': 0, 'WR': 0, 'TE': 0},
-            tiered_inflation={'QB': {}, 'RB': {}, 'WR': {}, 'TE': {}},
-            picks_per_tier={'QB': {}, 'RB': {}, 'WR': {}, 'TE': {}},
-            total_picks={'QB': 0, 'RB': 0, 'WR': 0, 'TE': 0},
-            get_color_class={},  
-            doe_values={}
-        )
+    return render_template('inflation.html'),
+    overall_inflation=0
 
 @app.route('/get_inflation_rate', methods=['GET', 'POST'])
 def get_inflation_rate():
@@ -332,7 +336,6 @@ def get_inflation_rate():
         # Calculate the DOE values
         doe_values = calculate_doe_values(draft_data, expected_values, inflation_rates['positional_tiered'])
         
-        # Return the template with the new data
         return render_template(
             'inflation.html', 
             inflation_rates=inflation_rates,
@@ -342,7 +345,7 @@ def get_inflation_rate():
             picks_per_tier=picks_per_tier,
             total_picks=total_picks,
             draft_id=draft_id,
-            get_color_class=get_color_class,
+            get_color_class=get_color_class,  # This line is the change
             doe_values=doe_values  # pass doe_values here
         )
     else:
@@ -355,9 +358,9 @@ def get_inflation_rate():
             picks_per_tier={'QB': {}, 'RB': {}, 'WR': {}, 'TE': {}},
             total_picks={'QB': 0, 'RB': 0, 'WR': 0, 'TE': 0},
             draft_id="",  # default empty string for draft_id
-            get_color_class={},
+            get_color_class=get_color_class,
             doe_values={}
         )
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, threaded=True)
