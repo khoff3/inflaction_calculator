@@ -1,10 +1,7 @@
 import requests
 import pandas as pd
 from flask import Flask, jsonify, request, render_template
-from flask import jsonify
-from flask import render_template
 from fuzzywuzzy import process
-
 
 app = Flask(__name__, template_folder='C:\\Users\\lasab\\Downloads')
 
@@ -12,6 +9,7 @@ BASE_URL = "https://api.sleeper.app/v1/draft/"
 EXPECTED_VALUES_PATH = 'C:\\Users\\lasab\\Downloads\\Standard Auction Values (2).csv'
 TIER_COUNT = 10
 # ... (rest of the code)
+
 
 def get_doe_color_class(doe):
     if doe is None:
@@ -30,6 +28,30 @@ def get_doe_color_class(doe):
         return "moderate-savings"
     else:
         return "severe-savings"
+
+def get_avg_tier_cost(draft_data, expected_values):
+    avg_tier_cost = {"QB": {}, "RB": {}, "WR": {}, "TE": {}}
+    
+    for position in ["QB", "RB", "WR", "TE"]:
+        for tier in range(1, TIER_COUNT + 1):
+            tier_players = [
+                player for player in draft_data 
+                if player["metadata"]["position"] == position and 
+                not expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Tier"].empty and 
+                expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Tier"].values[0] == tier
+            ]
+            
+            # Calculate the average cost for the tier
+            tier_values = [
+                expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Value"].values[0]
+                for player in tier_players
+            ]
+            total_value = sum(tier_values)
+            avg_cost = total_value / len(tier_players) if tier_players else 0
+            avg_tier_cost[position][tier] = avg_cost
+    print("Average Tier Costs:", avg_tier_cost)
+    return avg_tier_cost
+
 
 def calculate_inflation_with_logging(draft_data, expected_values):
     unmatched_players = []  # To store players that aren't directly matched
@@ -285,6 +307,8 @@ def calculate_inflation_rates(draft_data):
     print("Tiered Inflation:", positional_tier_inflation)
     print("Unmatched players:", unmatched_players)
     print("Fuzzy matches:", fuzzy_matches)
+    print(draft_data[:5])  # Print first 5 players from draft_data
+    print(expected_values[:5])  # Print first 5 players from expected_values
 
     return {
         "overall": inflation, 
@@ -314,53 +338,64 @@ def diagnose_mahomes(draft_data, expected_values):
 
 @app.route('/')
 def index():
-    return render_template('inflation.html'),
-    overall_inflation=0
+    return render_template('inflation.html', overall_inflation=0)
+
 
 @app.route('/get_inflation_rate', methods=['GET', 'POST'])
 def get_inflation_rate():
+    # Initialize default values
+    draft_id = ""
+    inflation_rates = {}
+    overall_inflation = 0
+    positional_inflation = {'QB': 0, 'RB': 0, 'WR': 0, 'TE': 0}
+    tiered_inflation = {'QB': {}, 'RB': {}, 'WR': {}, 'TE': {}}
+    picks_per_tier = {'QB': {}, 'RB': {}, 'WR': {}, 'TE': {}}
+    total_picks = {'QB': 0, 'RB': 0, 'WR': 0, 'TE': 0}
+    avg_tier_costs = {"QB": {}, "RB": {}, "WR": {}, "TE": {}}
+    doe_values = {}
+    
     if request.method == 'POST':
         draft_id = request.form['draft_id']
         draft_data = get_draft_data(draft_id)
         inflation_rates, expected_values = calculate_inflation_rates(draft_data)
+        avg_tier_costs = get_avg_tier_cost(draft_data, expected_values)  # Update the dictionary here
         
+    if request.method == 'POST':
+        draft_id = request.form['draft_id']
+        draft_data = get_draft_data(draft_id)
+        inflation_rates, expected_values = calculate_inflation_rates(draft_data)
+        avg_tier_costs = get_avg_tier_cost(draft_data, expected_values)  # Update the dictionary here
+
         # Diagnose Mahomes situation
         diagnose_mahomes(draft_data, expected_values)
 
         # Calculate picks per tier
         picks_per_tier = get_picks_per_tier(draft_data, expected_values)
-        
+
         # Calculate total picks
         total_picks = {pos: sum(tier_counts.values()) for pos, tier_counts in picks_per_tier.items()}
 
         # Calculate the DOE values
         doe_values = calculate_doe_values(draft_data, expected_values, inflation_rates['positional_tiered'])
+
+        # Update the inflation values based on calculations
+        overall_inflation = inflation_rates.get('overall', 0)
+        positional_inflation = inflation_rates.get('positional', {'QB': 0, 'RB': 0, 'WR': 0, 'TE': 0})
+        tiered_inflation = inflation_rates.get('positional_tiered', {'QB': {}, 'RB': {}, 'WR': {}, 'TE': {}})
         
-        return render_template(
-            'inflation.html', 
-            inflation_rates=inflation_rates,
-            overall_inflation=inflation_rates['overall'],
-            positional_inflation=inflation_rates['positional'],
-            tiered_inflation=inflation_rates['positional_tiered'],
-            picks_per_tier=picks_per_tier,
-            total_picks=total_picks,
-            draft_id=draft_id,
-            get_color_class=get_color_class,  # This line is the change
-            doe_values=doe_values  # pass doe_values here
-        )
-    else:
-        return render_template(
-            'inflation.html', 
-            inflation_rates={},
-            overall_inflation=0,
-            positional_inflation={'QB': 0, 'RB': 0, 'WR': 0, 'TE': 0},
-            tiered_inflation={'QB': {}, 'RB': {}, 'WR': {}, 'TE': {}},
-            picks_per_tier={'QB': {}, 'RB': {}, 'WR': {}, 'TE': {}},
-            total_picks={'QB': 0, 'RB': 0, 'WR': 0, 'TE': 0},
-            draft_id="",  # default empty string for draft_id
-            get_color_class=get_color_class,
-            doe_values={}
-        )
+    return render_template(
+        'inflation.html', 
+        inflation_rates=inflation_rates,
+        overall_inflation=overall_inflation,
+        positional_inflation=positional_inflation,
+        tiered_inflation=tiered_inflation,
+        picks_per_tier=picks_per_tier,
+        total_picks=total_picks,
+        draft_id=draft_id,
+        get_color_class=get_color_class,
+        avg_tier_costs=avg_tier_costs,
+        doe_values=doe_values
+    )
 
 if __name__ == "__main__":
     app.run(debug=True, threaded=True)
