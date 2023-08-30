@@ -1,10 +1,11 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fantasy Football Draft Inflation Rate</title>
-    <style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Fantasy Football Draft Inflation Rate</title>
+<style>
         body { font-size: 0.9rem; }
         h1, h2, h3 { margin-top: 0.5rem; margin-bottom: 0.5rem; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
@@ -30,73 +31,86 @@
     </style>
 </head>
 <body>
-    <h1>Fantasy Football Draft Inflation Rate</h1>
-    <form action="/get_inflation_rate" method="post">
-        <label for="draft_id">Enter Draft ID:</label>
-        <input type="text" id="draft_id" name="draft_id" value="{{ draft_id }}">
-        <input type="submit" value="Submit">
-    </form>
+<h1>Fantasy Football Draft Inflation Rate</h1>
+<div style="margin: 1rem 0;">
+<label>Live Update:</label>
+<input checked="" id="liveUpdateSwitch" onchange="toggleSwitch()" type="checkbox"/>
+</div>
+<form action="/inflation" method="post">
+<label for="draft_id">Enter Draft ID:</label>
+<input id="draft_id" name="draft_id" type="text" value="{{ draft_id }}"/>
+<input type="submit" value="Submit"/>
+</form>
+<h2>Overall Inflation</h2>
+<p id="overall-inflation-display">Overall Inflation: {{ "{:.2f}%".format(overall_inflation * 100) }}</p>
+<h2>Positional Inflation</h2>
+<table>
+    <tr>
+        <th>Position</th>
+        <th>Inflation (%)</th>
+        <th>Number of Picks</th>
+    </tr>
+    {% for position, inflation in positional_inflation.items() %}
+    <tr>
+        <td>{{ position }}</td>
+        <td class="{{ get_color_class(inflation) }}">
+            <!-- Dynamically populate Inflation rate -->
+            <span id="{{ position|lower() }}-inflation">
+                {% if inflation != 'N/A' %}
+                    {{ "{:.2f}%".format(inflation * 100) }}
+                {% else %}
+                    N/A
+                {% endif %}
+            </span>
+        </td>
+        <td>
+            <!-- Dynamically populate Number of Picks -->
+            <span id="{{ position|lower() }}-picks">{{ total_picks[position] }}</span>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
 
-    <h2>Overall Inflation</h2>
-    <p>Overall Inflation: {{ "{:.2f}%".format(overall_inflation * 100) }}</p>
-
-    <h2>Positional Inflation</h2>
-    <table>
-        <tr>
-            <th>Position</th>
-            <th>Inflation (%)</th>
-            <th>Number of Picks</th>
-        </tr>
-        {% for position, inflation in positional_inflation.items() %}
-        <tr>
-            <td>{{ position }}</td>
-            <td class="{{ get_color_class(inflation) }}">{{ "{:.2f}%".format(inflation * 100) }}</td>
-            <td>{{ total_picks[position] }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-
-    <h2>Tiered Inflation</h2>
-    <div class="tiered-inflation">
-        <section>
-            <h3>QB</h3>
-            <table>
-                <tr>
-                    <th>Tier</th>
-                    <th>Inflation (%)</th>
-                    <th>Picks</th>
-                    <th>DOE ($)</th>
-                    <th>Avg Cost ($)</th>
-                </tr>
+<h2>Tiered Inflation</h2>
+<div class="tiered-inflation">
+<section>
+<h3>QB</h3>
+<table>
+<tr>
+<th>Tier</th>
+<th>Inflation (%)</th>
+<th>Picks</th>
+<th>DOE ($)</th>
+<th>Avg Cost ($)</th>
+</tr>
                 {% for tier in range(1, 5) %}
                 <tr>
-                    <td>{{ tier }}</td>
-                    <td class="{{ get_color_class(tiered_inflation['QB'].get(tier, 0)) }}">{{ "{:.2f}%".format(tiered_inflation['QB'].get(tier, 0)*100) }}</td>
-                    <td>{{ picks_per_tier['QB'][tier] }}</td>
+<td>{{ tier }}</td>
+<td class="{{ get_color_class(tiered_inflation['QB'].get(tier, 0)) }}">{{ "{:.2f}%".format(tiered_inflation['QB'].get(tier, 0)*100) }}</td>
+<td>{{ picks_per_tier['QB'][tier] }}</td>
                     {% if 'QB' in doe_values %}
                         <td class="{{ get_color_class(doe_values['QB'].get(tier, 0)) }}">{{ "${:.2f}".format(doe_values['QB'].get(tier, 0)) }}</td>
                     {% else %}
                         <td class="{{ get_color_class(0) }}">{{ "${:.2f}".format(0) }}</td>
                     {% endif %}
                     <td>{{ "${:.2f}".format(avg_tier_costs['QB'].get(tier, 0)) }}</td>
-                </tr>
+</tr>
                 {% endfor %}
             </table>
-        </section>
-    
-        <section>
-            <h3>RB</h3>
-            <table>
-                <tr>
-                    <th>Tier</th>
-                    <th>Inflation (%)</th>
-                    <th>Picks</th>
-                    <th>DOE ($)</th>
-                    <th>Avg Cost ($)</th>
-                </tr>
+</section>
+<section>
+<h3>RB</h3>
+<table>
+<tr>
+<th>Tier</th>
+<th>Inflation (%)</th>
+<th>Picks</th>
+<th>DOE ($)</th>
+<th>Avg Cost ($)</th>
+</tr>
                 {% for tier in range(1, 8) %}
                 <tr>
-                    <td>{{ tier }}</td>
+<td>{{ tier }}</td>
                     {% if tier in tiered_inflation['RB'] %}
                         <td class="{{ get_color_class(tiered_inflation['RB'][tier]) }}">{{ "{:.2f}%".format(tiered_inflation['RB'][tier]*100) }}</td>
                     {% else %}
@@ -109,24 +123,23 @@
                         <td class="{{ get_color_class(0) }}">{{ "${:.2f}".format(0) }}</td>
                     {% endif %}
                     <td>{{ "${:.2f}".format(avg_tier_costs['RB'].get(tier, 0)) }}</td>
-                </tr>
+</tr>
                 {% endfor %}
             </table>
-        </section>
-  
-        <section>
-            <h3>WR</h3>
-            <table>
-                <tr>
-                    <th>Tier</th>
-                    <th>Inflation (%)</th>
-                    <th>Picks</th>
-                    <th>DOE ($)</th>
-                    <th>Avg Cost ($)</th>
-                </tr>
+</section>
+<section>
+<h3>WR</h3>
+<table>
+<tr>
+<th>Tier</th>
+<th>Inflation (%)</th>
+<th>Picks</th>
+<th>DOE ($)</th>
+<th>Avg Cost ($)</th>
+</tr>
                 {% for tier in range(1, 9) %}
                 <tr>
-                    <td>{{ tier }}</td>
+<td>{{ tier }}</td>
                     {% if tier in tiered_inflation['WR'] %}
                         <td class="{{ get_color_class(tiered_inflation['WR'][tier]) }}">{{ "{:.2f}%".format(tiered_inflation['WR'][tier]*100) }}</td>
                     {% else %}
@@ -139,24 +152,23 @@
                         <td class="{{ get_color_class(0) }}">{{ "${:.2f}".format(0) }}</td>
                     {% endif %}
                     <td>{{ "${:.2f}".format(avg_tier_costs['WR'].get(tier, 0)) }}</td>
-                </tr>
+</tr>
                 {% endfor %}
             </table>
-        </section>        
-        
-        <section>
-            <h3>TE</h3>
-            <table>
-                <tr>
-                    <th>Tier</th>
-                    <th>Inflation (%)</th>
-                    <th>Picks</th>
-                    <th>DOE ($)</th>
-                    <th>Avg Cost ($)</th>
-                </tr>
+</section>
+<section>
+<h3>TE</h3>
+<table>
+<tr>
+<th>Tier</th>
+<th>Inflation (%)</th>
+<th>Picks</th>
+<th>DOE ($)</th>
+<th>Avg Cost ($)</th>
+</tr>
                 {% for tier in range(1, 4) %}
                 <tr>
-                    <td>{{ tier }}</td>
+<td>{{ tier }}</td>
                     {% if tier in tiered_inflation['TE'] %}
                         <td class="{{ get_color_class(tiered_inflation['TE'][tier]) }}">{{ "{:.2f}%".format(tiered_inflation['TE'][tier]*100) }}</td>
                     {% else %}
@@ -169,11 +181,126 @@
                         <td class="{{ get_color_class(0) }}">{{ "${:.2f}".format(0) }}</td>
                     {% endif %}
                     <td>{{ "${:.2f}".format(avg_tier_costs['TE'].get(tier, 0)) }}</td>
-                </tr>
+</tr>
                 {% endfor %}
             </table>
-        </section>
+</section>
+</div>
+<script>
+        function get_color_class(value) {
+            if (value > 0.15) return 'severe-positive';
+            if (value > 0.1) return 'moderate-positive';
+            if (value > 0.05) return 'mild-positive';
+            if (value < -0.15) return 'severe-negative';
+            if (value < -0.1) return 'moderate-negative';
+            if (value < -0.05) return 'mild-negative';
+            return 'neutral';
+        }
 
+        function updateInflationData(data) {
+            try {
+                // Update Overall Inflation
+                const overallElem = document.getElementById('overall-inflation-display');
+                if (overallElem && data && data.overall_inflation) {
+                    overallElem.innerText = `Overall Inflation: ${(parseFloat(data.overall_inflation) * 100).toFixed(2)}%`;
+                } else {
+                    console.warn("DOM element 'overall-inflation-display' not found.");
+                }
+
+                // Update Positional Inflation
+                ['QB', 'RB', 'WR', 'TE'].forEach(position => {
+                    const posInflationElem = document.getElementById(position.toLowerCase() + '-inflation');
+                    const posPicksElem = document.getElementById(position.toLowerCase() + '-picks');
+
+                    if (data.positional_inflation && data.positional_inflation[position]) {
+                        if (posInflationElem) {
+                            posInflationElem.innerText = `${(parseFloat(data.positional_inflation[position]) * 100).toFixed(2)}%`;
+                        } else {
+                            console.warn(`DOM element '${position.toLowerCase()}-inflation' not found.`);
+                        }
+                    }
+
+                    if (data.total_picks && data.total_picks[position]) {
+                        if (posPicksElem) {
+                            posPicksElem.innerText = data.total_picks[position];
+                        } else {
+                            console.warn(`DOM element '${position.toLowerCase()}-picks' not found.`);
+                        }
+                    }
+                });
+
+                // Update Tiered Inflation
+                ['QB', 'RB', 'WR', 'TE'].forEach(position => {
+                    for (let i = 1; i <= 12; i++) {
+                        const inflationElemId = position.toLowerCase() + '-tier-' + i + '-inflation';
+                        const inflationElem = document.getElementById(inflationElemId);
+
+                        // Check if the tier exists in the data before trying to update it
+                        if (data.tiered_inflation && data.tiered_inflation[position] && data.tiered_inflation[position][i]) {
+                            if (inflationElem) {
+                                inflationElem.innerText = `${(parseFloat(data.tiered_inflation[position][i]) * 100).toFixed(2)}%`;
+                            } else {
+                                console.warn(`DOM element '${inflationElemId}' not found.`);
+                            }
+                        }
+                        // Note: If you don't want the warnings for missing tiers, you can simply remove the else block
+
+                        // Other fields (picks, doe_values, avg_tier_costs) can be updated similarly with error checks
+                    }
+                });
+            } catch (error) {
+                console.error("Error updating inflation data: ", error);
+            }
+        }
+
+        function updateField(position, tier, fieldType, value) {
+            const fieldId = `${position}-${tier}-${fieldType}`;
+            const elem = document.getElementById(fieldId);
+    
+            if (elem) {
+                if (fieldType === 'inflation' || fieldType === 'doe' || fieldType === 'avg_cost') {
+                    elem.innerText = fieldType === 'inflation' ? `${(value * 100).toFixed(2)}%` : `$${value.toFixed(2)}`;
+                    elem.className = get_color_class(value);
+                } else if (fieldType === 'picks') {
+                    elem.innerText = value;
+                }
+            }
+        }
+    
+        let pollingInterval;
+        function fetchData() {
+            if (document.getElementById('liveUpdateSwitch').checked) {
+                fetch('/inflation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: `draft_id=${document.getElementById('draft_id').value}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Received data:", data);
+                    updateInflationData(data);
+                });
+    
+                if (!pollingInterval) {
+                    pollingInterval = setInterval(fetchData, 10000);
+                }
+            } else {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
         
-</body>
+        function toggleSwitch() {
+            fetchData();
+        }
+    
+        // Start fetching when the page loads if the checkbox is checked
+        document.addEventListener("DOMContentLoaded", function() {
+            fetchData();
+        });
+    </script>
 </html>
