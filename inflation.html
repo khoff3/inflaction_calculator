@@ -196,62 +196,33 @@
             if (value < -0.05) return 'mild-negative';
             return 'neutral';
         }
-
         function updateInflationData(data) {
-            try {
-                // Update Overall Inflation
-                const overallElem = document.getElementById('overall-inflation-display');
-                if (overallElem && data && data.overall_inflation) {
-                    overallElem.innerText = `Overall Inflation: ${(parseFloat(data.overall_inflation) * 100).toFixed(2)}%`;
+            console.log("Updating Inflation Data with:", data);
+
+            const safeUpdate = (id, value) => {
+                let el = document.getElementById(id);
+                if (el) {
+                    el.textContent = value;
                 } else {
-                    console.warn("DOM element 'overall-inflation-display' not found.");
+                    console.log(`DOM element '${id}' not found.`);
                 }
+            };
 
-                // Update Positional Inflation
-                ['QB', 'RB', 'WR', 'TE'].forEach(position => {
-                    const posInflationElem = document.getElementById(position.toLowerCase() + '-inflation');
-                    const posPicksElem = document.getElementById(position.toLowerCase() + '-picks');
-
-                    if (data.positional_inflation && data.positional_inflation[position]) {
-                        if (posInflationElem) {
-                            posInflationElem.innerText = `${(parseFloat(data.positional_inflation[position]) * 100).toFixed(2)}%`;
-                        } else {
-                            console.warn(`DOM element '${position.toLowerCase()}-inflation' not found.`);
-                        }
-                    }
-
-                    if (data.total_picks && data.total_picks[position]) {
-                        if (posPicksElem) {
-                            posPicksElem.innerText = data.total_picks[position];
-                        } else {
-                            console.warn(`DOM element '${position.toLowerCase()}-picks' not found.`);
-                        }
-                    }
-                });
-
-                // Update Tiered Inflation
-                ['QB', 'RB', 'WR', 'TE'].forEach(position => {
-                    for (let i = 1; i <= 12; i++) {
-                        const inflationElemId = position.toLowerCase() + '-tier-' + i + '-inflation';
-                        const inflationElem = document.getElementById(inflationElemId);
-
-                        // Check if the tier exists in the data before trying to update it
-                        if (data.tiered_inflation && data.tiered_inflation[position] && data.tiered_inflation[position][i]) {
-                            if (inflationElem) {
-                                inflationElem.innerText = `${(parseFloat(data.tiered_inflation[position][i]) * 100).toFixed(2)}%`;
-                            } else {
-                                console.warn(`DOM element '${inflationElemId}' not found.`);
-                            }
-                        }
-                        // Note: If you don't want the warnings for missing tiers, you can simply remove the else block
-
-                        // Other fields (picks, doe_values, avg_tier_costs) can be updated similarly with error checks
-                    }
-                });
-            } catch (error) {
-                console.error("Error updating inflation data: ", error);
+            if (data.overall_inflation) {
+                safeUpdate('overall-inflation', data.overall_inflation);
             }
+
+            const positions = ['qb', 'rb', 'wr', 'te'];
+            positions.forEach(position => {
+                for (let i = 1; i <= 10; i++) {
+                    let tierKey = `${position}-tier-${i}-inflation`;
+                    if (data.positional_inflation && data.positional_inflation[position] && data.positional_inflation[position][i]) {
+                        safeUpdate(tierKey, data.positional_inflation[position][i]);
+                    }
+                }
+            });
         }
+
 
         function updateField(position, tier, fieldType, value) {
             const fieldId = `${position}-${tier}-${fieldType}`;
@@ -267,8 +238,15 @@
             }
         }
     
-        let pollingInterval;
+        var pollingInterval = null;
         function fetchData() {
+            const draftIdValue = document.getElementById('draft_id').value;
+            
+            if (!draftIdValue) {
+                console.error("Draft ID is not populated.");
+                return;
+            }
+
             if (document.getElementById('liveUpdateSwitch').checked) {
                 fetch('/inflation', {
                     method: 'POST',
@@ -277,14 +255,14 @@
                         'Accept': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
                     },
-                    body: `draft_id=${document.getElementById('draft_id').value}`
+                    body: `draft_id=${draftIdValue}`
                 })
                 .then(response => response.json())
                 .then(data => {
                     console.log("Received data:", data);
                     updateInflationData(data);
                 });
-    
+            
                 if (!pollingInterval) {
                     pollingInterval = setInterval(fetchData, 10000);
                 }
@@ -293,6 +271,7 @@
                 pollingInterval = null;
             }
         }
+
         
         function toggleSwitch() {
             fetchData();
@@ -303,4 +282,6 @@
             fetchData();
         });
     </script>
+
+<button onclick="fetchData()">Manual Fetch</button>
 </html>
