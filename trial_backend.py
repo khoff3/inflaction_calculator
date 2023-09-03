@@ -560,14 +560,8 @@ def map_players_to_ev_data(draft_data, ev_data):
     return draft_data, unmatched_players, fuzzy_matches
 
 
-if __name__ == "__main__":
-    app.run(debug=True, threaded=True)
-
-
 # Update the function call to map_players_to_ev_data
 draft_data, unmatched_players, fuzzy_matches = map_players_to_ev_data(draft_data, ev_data)
-
-# Handle players without tiers
 
 # Handle players without tiers
 if "Not Available" in picks_per_tier["RB"]:
@@ -576,11 +570,3 @@ if "Not Available" in picks_per_tier["RB"]:
 
 if __name__ == "__main__":
     app.run(debug=True, threaded=True)
-
-
-# Update the function call to map_players_to_ev_data
-draft_data, unmatched_players, fuzzy_matches = map_players_to_ev_data(draft_data, ev_data)
-
-# Handle players without tiers
-if "Not Available" in picks_per_tier["RB"]:
-    del picks_per_tier["RB"]["Not Available"]
