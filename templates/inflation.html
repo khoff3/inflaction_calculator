@@ -133,33 +133,29 @@
 
     <h2>Tiered Inflation</h2>
     <div class="tiered-inflation">
-        {% if tiered_inflation and tiered_inflation is mapping %}
-            {% for position, tiers in tiered_inflation.items() %}
-            <section>
-                <h3>{{ position.upper() }}</h3>
-                <table>
-                    <tr>
-                        <th>Tier</th>
-                        <th>Inflation (%)</th>
-                        <th>Picks</th>
-                        <th>DOE ($)</th>
-                        <th>Avg Cost ($)</th>
-                    </tr>
-                    {% for tier, inflation in tiers.items() %}
-                    <tr>
-                        <td>{{ tier }}</td>
-                        <td class="{{ get_color_class(inflation) }}">{{ "{:.2f}%".format(inflation*100) }}</td>
-                        <td>{{ picks_per_tier[position].get(tier, 0) }}</td>
-                        <td class="{{ get_color_class(doe_values[position].get(tier, 0)) }}">{{ "${:.2f}".format(doe_values[position].get(tier, 0)) }}</td>
-                        <td>{{ "${:.2f}".format(avg_tier_costs[position].get(tier, 0)) }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-            </section>
-            {% endfor %}
-        {% else %}
-            <p>No tiered inflation data available.</p>
-        {% endif %}
+        {% for position, tiers in tiered_inflation.items() %}
+        <section>
+            <h3>{{ position.upper() }}</h3>
+            <table>
+                <tr>
+                    <th>Tier</th>
+                    <th>Inflation (%)</th>
+                    <th>Picks</th>
+                    <th>DOE ($)</th>
+                    <th>Avg Cost ($)</th>
+                </tr>
+                {% for tier, inflation in tiers.items() %}
+                <tr>
+                    <td>{{ tier }}</td>
+                    <td id="{{ position }}-{{ tier }}-inflation" class="{{ get_color_class(inflation) }}">{{ "{:.2f}%".format(inflation*100) }}</td>
+                    <td id="{{ position }}-{{ tier }}-picks">{{ picks_per_tier[position].get(tier, 0) }}</td>
+                    <td id="{{ position }}-{{ tier }}-doe" class="{{ get_color_class(doe_values[position].get(tier, 0)) }}">{{ "${:.2f}".format(doe_values[position].get(tier, 0)) }}</td>
+                    <td id="{{ position }}-{{ tier }}-avg_cost">{{ "${:.2f}".format(avg_tier_costs[position].get(tier, 0)) }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </section>
+        {% endfor %}      
     </div>
 </div>
 
@@ -354,20 +350,36 @@ if (data.r2_values) {
                     let tiers = data.tiered_inflation[position];
                     for (let tier in tiers) {
                         let inflationValue = convertToNumber(tiers[tier]);
-                        if (typeof inflationValue === 'number') {
-                            updateField(position, tier, 'inflation', inflationValue);
-                            if (data.picks_per_tier && data.picks_per_tier[position]) {
-                                // Handle tier key inconsistency
-                                let tierKey = tier.includes('.') ? tier : `${tier}.0`;
-                                updateField(position, tier, 'picks', convertToNumber(data.picks_per_tier[position][tierKey] || "0"));
-                            }
-                            if (data.doe_values && data.doe_values[position]) {
-                                updateField(position, tier, 'doe', convertToNumber(data.doe_values[position][tier] || "0"));
-                            }
-                            if (data.avg_tier_costs && data.avg_tier_costs[position]) {
-                                updateField(position, tier, 'avg_cost', convertToNumber(data.avg_tier_costs[position][tier] || "0"));
-                            }
+                        
+                        // Update Inflation Value
+                        const inflationElem = document.getElementById(`${position}-${tier}-inflation`);
+                        if (inflationElem) {
+                            inflationElem.textContent = `${(inflationValue * 100).toFixed(2)}%`;
+                            inflationElem.className = get_color_class(inflationValue);
                         }
+
+                        // Example: Update Picks Value (you can follow this pattern for other fields)
+                        const picksElem = document.getElementById(`${position}-${tier}-picks`);
+                        if (picksElem && data.picks_per_tier && data.picks_per_tier[position]) {
+                            // Handle tier key inconsistency
+                            let tierKey = tier.includes('.') ? tier : `${tier}.0`;
+                            picksElem.textContent = data.picks_per_tier[position][tierKey] || "0";
+                        }
+
+                        // Update DOE Value
+                        const doeElem = document.getElementById(`${position}-${tier}-doe`);
+                        if (doeElem && data.doe_values && data.doe_values[position]) {
+                            let doeValue = convertToNumber(data.doe_values[position][tier] || "0");
+                            doeElem.textContent = `$${doeValue.toFixed(2)}`;
+                            doeElem.className = get_color_class(doeValue);
+                        }
+
+                        // Update Avg Cost Value
+                        const avgCostElem = document.getElementById(`${position}-${tier}-avg_cost`);
+                        if (avgCostElem && data.avg_tier_costs && data.avg_tier_costs[position]) {
+                            let avgCostValue = convertToNumber(data.avg_tier_costs[position][tier] || "0");
+                            avgCostElem.textContent = `$${avgCostValue.toFixed(2)}`;
+                        };                  
                     }
                 }
             }
