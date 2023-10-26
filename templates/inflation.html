@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>CTRL BRD</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $.ajaxSetup({
+                headers: {
+                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                }
+            });
+        });
+    </script>
+    <style>
+        body { font-size: 0.9rem; }
+        h1, h2, h3 { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
+        th, td { padding: 0.2rem 0.5rem; border: 1px solid #ddd; text-align: center; }
+        .mild-negative { background-color: #C7FFC7; }
+        .moderate-negative { background-color: #8FFF8F; }
+        .severe-negative { background-color: #4AFF4A; }
+        .mild-positive { background-color: #FFC7C7; }
+        .moderate-positive { background-color: #FF8F8F; }
+        .severe-positive { background-color: #FF4A4A; }
+        .neutral { background-color: #FFFFA3; }
+        .tiered-inflation { display: flex; flex-wrap: wrap; justify-content: space-between; }
+        .tiered-inflation section { flex: 1; min-width: 20%; border: 1px solid #e0e0e0; padding: 0.5rem; margin-right: 0.5rem; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); }
+        .tiered-inflation section:nth-child(even) { background-color: #f7f7f7; }
+        .severe-overpayment { background-color: #FF4A4A; }
+        .moderate-overpayment { background-color: #FF8F8F; }
+        .mild-overpayment { background-color: #FFC7C7; }
+        .neutral { background-color: #F2F2F2; }
+        .mild-savings { background-color: #C7FFC7; }
+        .moderate-savings { background-color: #8FFF8F; }
+        .severe-savings { background-color: #4AFF4A; }
+        h3 { font-weight: bold; }
+        
+        /* Styles for tabs */
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+        }
+
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+        }
+
+        .tab button:hover {
+            background-color: #ddd;
+        }
+
+        .tab button.active {
+            background-color: #ccc;
+        }
+
+        .tabcontent {
+            display: none;
+            padding: 6px 12px;
+            border: 1px solid #ccc;
+            border-top: none;
+        }
+    </style>
+</head>
+<body>
+<h1>Control Board</h1>
+<div style="margin: 1rem 0;">
+    <label>Live Update:</label>
+    <input id="liveUpdateSwitch" onchange="toggleSwitch()" type="checkbox"/>
+</div>
+<form action="/inflation" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="draft_id">Enter Draft ID:</label>
+    <input id="draft_id" name="draft_id" type="text" value="{{ draft_id }}"/>
+    <input type="submit" value="Submit"/>
+</form>
+<button onclick="fetchDataScatter()">Load Data</button>
+
+<!-- Tab links -->
+<div class="tab">
+    <button class="tablinks" onclick="openTab(event, 'InflationData')" id="InflationDataTab" >Inflation Data</button>
+    <button class="tablinks" onclick="openTab(event, 'ScatterPlot')" id="ScatterPlotTab" >Picks Over Time</button>    
+</div>
+
+<!-- Tab content -->
+<div id="InflationData" class="tabcontent">
+    <h2>Overall Inflation</h2>
+    <p id="overall-inflation-display">Overall Inflation: {{ "{:.2f}%".format(overall_inflation * 100) }}</p>
+    <h2>Positional Inflation</h2>
+    <table>
+        <tr>
+            <th>Position</th>
+            <th>Inflation (%)</th>
+            <th>Number of Picks</th>
+        </tr>
+        {% if positional_inflation and positional_inflation is mapping %}
+            {% for position, inflation in positional_inflation.items() %}
+            <tr>
+                <td>{{ position }}</td>
+                <td class="{{ get_color_class(inflation) }}">
+                    <!-- Dynamically populate Inflation rate -->
+                    <span id="{{ position|lower() }}-inflation">
+                        {% if inflation != 'N/A' %}
+                            {{ "{:.2f}%".format(inflation * 100) }}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </span>
+                </td>
+                <td>
+                    <!-- Dynamically populate Number of Picks -->
+                    <span id="{{ position|lower() }}-picks">{{ total_picks[position] }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+        {% else %}
+            <tr>
+                <td colspan="3">No inflation data available.</td>
+            </tr>
+        {% endif %}
+    </table>
+
+    <h2>Tiered Inflation</h2>
+    <div class="tiered-inflation">
+        {% if tiered_inflation and tiered_inflation is mapping %}
+            {% for position, tiers in tiered_inflation.items() %}
+            <section>
+                <h3>{{ position.upper() }}</h3>
+                <table>
+                    <tr>
+                        <th>Tier</th>
+                        <th>Inflation (%)</th>
+                        <th>Picks</th>
+                        <th>DOE ($)</th>
+                        <th>Avg Cost ($)</th>
+                    </tr>
+                    {% for tier, inflation in tiers.items() %}
+                    <tr>
+                        <td>{{ tier }}</td>
+                        <td class="{{ get_color_class(inflation) }}">{{ "{:.2f}%".format(inflation*100) }}</td>
+                        <td>{{ picks_per_tier[position].get(tier, 0) }}</td>
+                        <td class="{{ get_color_class(doe_values[position].get(tier, 0)) }}">{{ "${:.2f}".format(doe_values[position].get(tier, 0)) }}</td>
+                        <td>{{ "${:.2f}".format(avg_tier_costs[position].get(tier, 0)) }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </section>
+            {% endfor %}
+        {% else %}
+            <p>No tiered inflation data available.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div id="ScatterPlot" class="tabcontent">
+    <h2>Scatter Plot Data</h2>
+    <div id="scatterPlot" style="height: 600px;"></div>
+    <button onclick="fetchDataScatter()">Load Data</button>
+    <button onclick="plotDataManually()">Plot Manually</button>
+    <table>
+        <thead>
+            <tr>
+                <th>Position</th>
+                <th>R^2 Value</th>
+                <th>COW 1 Pick</th>
+                <th>COW 5 Picks</th>
+                <th>COW of 10 Picks</th>
+                <th>COW of 20 Picks</th>
+            </tr>
+        </thead>
+        <tbody id="scatterTableBody">
+            <!-- Rows will be dynamically inserted here -->
+        </tbody>
+        
+    </table>
+</div>
+
+    <!-- Load the Plotly library just before the scripts -->
+    <script src="https://cdn.plot.ly/plotly-2.6.0.min.js"></script>
+
+    <script>
+        // Add a variable to keep track if the scatter plot data has been loaded
+        let scatterDataLoaded = false;
+
+        function openTab(evt, tabName) {
+            console.log("Tab Clicked:", tabName)
+            var i, tabcontent, tablinks;
+            // Hide all tab contents
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            // Remove active class from all tab links
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            // Show the current tab and add active class to the button that opened the tab
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+            
+            // Fetch scatter data when the ScatterPlot tab is opened and data hasn't been loaded yet
+            console.log("Scatter Data Load Status:", scatterDataLoaded)
+            if (tabName === "ScatterPlot" && !scatterDataLoaded) {
+                fetchDataScatter();
+            }
+        }
+
+        async function fetchDataScatter() {
+            console.log("Fetching scatter data...");
+            const draftID = document.getElementById('draft_id').value;
+            try {
+                let response = await fetch(`http://127.0.0.1:5050/scatter_data?draft_id=${draftID}`);
+                if (!response.ok) {
+                    throw new Error(`Server responded with a status: ${response.status}`);
+                }
+                let data = await response.json();
+                
+                if (!data) {
+                    throw new Error("No data received from server");
+                }
+                
+                if (!data.scatterplot) {
+                    throw new Error("Scatterplot data missing from server response");
+                }
+
+                // Check for NaN or infinite values in scatterplot data
+                if (data.scatterplot.pick_no.some(value => isNaN(value) || !isFinite(value)) ||
+                    data.scatterplot.metadata_amount.some(value => isNaN(value) || !isFinite(value))) {
+                    throw new Error("Scatterplot data contains NaN or infinite values");
+                }
+
+                // Scatter plot logic
+                var trace = {
+                    x: data.scatterplot.pick_no,
+                    y: data.scatterplot.metadata_amount,
+                    mode: 'markers',
+                    marker: {
+                        color: data.scatterplot.colors,
+                        size: 10
+                    },
+                    text: data.scatterplot.player_names
+                };
+                var layout = {
+                    title: 'Scatter Plot',
+                    xaxis: {
+                        title: 'Pick Number'
+                    },
+                    yaxis: {
+                        title: 'Amount'
+                    }
+                };
+                // Check DOM element before invoking plot
+                if (document.getElementById('scatterPlot')) {
+                    setTimeout(() => {
+                        Plotly.react('scatterPlot', [trace], layout);
+                    }, 100);  // a delay of 100 milliseconds
+                    console.log("Plot should be rendered now.");
+                } else {
+                    console.error("Scatter plot element not found!");
+                }
+
+if (data.r2_values) {
+    // Table population logic
+    let tableBody = document.getElementById("scatterTableBody");
+    // Clear existing rows
+    tableBody.innerHTML = '';
+    for (let position in data.r2_values) {
+        if (data.r2_values[position] && typeof data.r2_values[position].r2 === 'number') {
+            let row = tableBody.insertRow();
+            let cellPosition = row.insertCell(0);
+            let cellR2 = row.insertCell(1);
+            let cellCost1 = row.insertCell(2);
+            let cellCost5 = row.insertCell(3);
+            let cellCost10 = row.insertCell(4);
+            let cellCost20 = row.insertCell(5);
+            cellPosition.textContent = position;
+            cellR2.textContent = data.r2_values[position].r2.toFixed(2);
+            cellCost1.textContent = data.r2_values[position].cost_of_waiting['1_pick'].toFixed(2);
+            cellCost5.textContent = data.r2_values[position].cost_of_waiting['5_picks'].toFixed(2);
+            cellCost10.textContent = data.r2_values[position].cost_of_waiting['10_picks'].toFixed(2);
+            cellCost20.textContent = data.r2_values[position].cost_of_waiting['20_picks'].toFixed(2);
+        } else {
+            console.warn(`r2 value for position ${position} is not a number or is missing.`);
+        }
+    }
+} else {
+    console.warn("r2_values data is missing or null.");
+}
+
+
+
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                alert("There was an issue fetching the scatter plot data. Please check the console for details.");
+            }
+            scatterDataLoaded = true;
+        }
+
+        function get_color_class(value) {
+            if (value > 0.15) return 'severe-positive';
+            if (value > 0.1) return 'moderate-positive';
+            if (value > 0.05) return 'mild-positive';
+            if (value < -0.15) return 'severe-negative';
+            if (value < -0.1) return 'moderate-negative';
+            if (value < -0.05) return 'mild-negative';
+            return 'neutral';
+        }
+
+        function updateInflationData(data) {
+            function convertToNumber(value) {
+                return (typeof value === "string") ? parseFloat(value) : value;
+            }
+
+            // 1. Update Overall Inflation
+            const overallInflationElem = document.getElementById('overall-inflation-display');
+            if (data.overall_inflation && overallInflationElem) {
+                let overallInflationValue = convertToNumber(data.overall_inflation);
+                overallInflationElem.textContent = `Overall Inflation: ${(overallInflationValue * 100).toFixed(2)}%`;
+            }
+
+            // 2. Update Positional Inflation Table
+            if (data.positional_inflation) {
+                for (let position in data.positional_inflation) {
+                    let inflationValue = convertToNumber(data.positional_inflation[position]);
+                    if (typeof inflationValue === 'number') {
+                        const inflationElem = document.getElementById(`${position.toLowerCase()}-inflation`);
+                        const picksElem = document.getElementById(`${position.toLowerCase()}-picks`);
+                        if (inflationElem) {
+                            inflationElem.textContent = `${(inflationValue * 100).toFixed(2)}%`;
+                            inflationElem.className = get_color_class(inflationValue);
+                        }
+                        if (picksElem && data.total_picks && data.total_picks[position]) {
+                            picksElem.textContent = data.total_picks[position];
+                        }
+                    }
+                }
+            }
+
+            // 3. Update Tiered Inflation Sections
+            if (data.tiered_inflation) {
+                for (let position in data.tiered_inflation) {
+                    let tiers = data.tiered_inflation[position];
+                    for (let tier in tiers) {
+                        let inflationValue = convertToNumber(tiers[tier]);
+                        if (typeof inflationValue === 'number') {
+                            updateField(position, tier, 'inflation', inflationValue);
+                            if (data.picks_per_tier && data.picks_per_tier[position]) {
+                                // Handle tier key inconsistency
+                                let tierKey = tier.includes('.') ? tier : `${tier}.0`;
+                                updateField(position, tier, 'picks', convertToNumber(data.picks_per_tier[position][tierKey] || "0"));
+                            }
+                            if (data.doe_values && data.doe_values[position]) {
+                                updateField(position, tier, 'doe', convertToNumber(data.doe_values[position][tier] || "0"));
+                            }
+                            if (data.avg_tier_costs && data.avg_tier_costs[position]) {
+                                updateField(position, tier, 'avg_cost', convertToNumber(data.avg_tier_costs[position][tier] || "0"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+        function updateField(position, tier, fieldType, value) {
+            const fieldId = `${position}-${tier}-${fieldType}`;
+            const elem = document.getElementById(fieldId);
+            if (elem) {
+                if (fieldType === 'inflation' || fieldType === 'doe' || fieldType === 'avg_cost') {
+                    elem.innerText = fieldType === 'inflation' ? `${(value * 100).toFixed(2)}%` : `$${value.toFixed(2)}`;
+                    elem.className = get_color_class(value);
+                } else if (fieldType === 'picks') {
+                    elem.innerText = value;
+                }
+            }
+        }
+
+        var pollingInterval = null;
+
+        function fetchData() {
+            const draftIdValue = document.getElementById('draft_id').value;
+            if (!draftIdValue) {
+                console.error("Draft ID is not populated.");
+                return;
+            }
+            if (document.getElementById('liveUpdateSwitch').checked) {
+                fetch('/inflation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: `draft_id=${draftIdValue}&csrf_token=${$('meta[name="csrf-token"]').attr('content')}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Received data:", data);
+                    updateInflationData(data);
+                });
+                if (!pollingInterval) {
+                    pollingInterval = setInterval(fetchData, 10000);
+                }
+            } else {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+            // Also fetch scatter plot data if the ScatterPlot tab is active
+            if (document.querySelector('.tablinks.active').getAttribute('id') === 'ScatterPlotTab') {
+                fetchDataScatter();
+            }
+        }
+
+
+        function toggleSwitch() {
+            fetchData();
+        }
+
+        function plotDataManually() {
+            var trace = {
+                x: [1, 2, 3, 4, 5],
+                y: [1, 2, 4, 8, 16],
+                mode: 'markers',
+                marker: {
+                    color: ['red', 'green', 'blue', 'yellow', 'purple'],
+                    size: 10
+                },
+                text: ['A', 'B', 'C', 'D', 'E']
+            };
+            var layout = {
+                title: 'Scatter Plot',
+                xaxis: {
+                    title: 'X Axis'
+                },
+                yaxis: {
+                    title: 'Y Axis'
+                }
+            };
+            Plotly.newPlot('scatterPlot', [trace], layout);
+        }
+
+        // Start fetching when the page loads if the checkbox is checked
+        document.addEventListener("DOMContentLoaded", function() {
+            if (document.getElementById('liveUpdateSwitch').checked) {
+                fetchData();
+            }
+            document.getElementById("defaultOpen").click();
+        });
+
+    </script>
+</body>
+
+</html>

@@ -5,85 +5,14 @@ from fuzzywuzzy import fuzz, process
 import json
 import numpy as np
 from numpy import float64
-import os
-from flask_cors import CORS
-import logging
-from flask_wtf.csrf import CSRFProtect
-from flask_session import Session
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
 
-#test file path
-file_path = 'player_name_mappings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-file_path = 'FantasyPros_2023_Draft_QB_Rankings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-file_path = 'FantasyPros_2023_Draft_RB_Rankings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-file_path = 'FantasyPros_2023_Draft_WR_Rankings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-file_path = 'FantasyPros_2023_Draft_TE_Rankings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-
-file_path = 'Standard_Auction_Values.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-
-# Define the path to the folder containing inflation.html relative to the script
-TEMPLATE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
-# Define paths in a cross-platform way
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # This gets the directory where the script is located
-TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')  # Assuming your templates are in a 'templates' directory inside your script's directory
-EXPECTED_VALUES_PATH = os.path.join(BASE_DIR, 'Standard_Auction_Values.csv')
-MAPPINGS_PATH = os.path.join(BASE_DIR, 'player_name_mappings.csv')
-
-# Initializations
-app = Flask(__name__, template_folder=TEMPLATE_DIR)
-CORS(app, resources={r"/*": {"origins": "*"}})
-logging.basicConfig(level=logging.DEBUG)
-
-# Session configuration
-app.config['SESSION_TYPE'] = 'filesystem'
-Session(app)
-
-# Initialize CSRF protection
-csrf = CSRFProtect(app)
-
+app = Flask(__name__, template_folder='C:\\Users\\lasab\\Downloads')
 BASE_URL = "https://api.sleeper.app/v1/draft/"
+EXPECTED_VALUES_PATH = 'C:\\Users\\lasab\\Downloads\\Standard Auction Values (2).csv'
 TIER_COUNT = 10
 exception_list = {}
-extended_mapping = pd.read_csv(MAPPINGS_PATH)
+extended_mapping = pd.read_csv("C:\\Users\\lasab\\Downloads\\player_name_mappings.csv").set_index("Original_Name").to_dict()["Mapped_Name"]
 exception_list.update(extended_mapping)
-app.config['SECRET_KEY'] = 'qZw6G6Zy8EGdgR6UfHMgERGYiEZpvODt'
-
-
-#position colors
-POSITION_COLORS = {
-    "QB": "red",
-    "RB": "green",
-    "WR": "blue",
-    "TE": "yellow"
-}
-
 # Add hardcoded values to exception_list
 hardcoded_exceptions = {
     "D'Andre Swift": "D'Andre Swift",
@@ -128,12 +57,7 @@ def sanitize_data(data):
     elif isinstance(data, (int, float)):
         return str(data)
     return data
-
 def get_best_match_name(name, draft_data_names):
-    # Check hardcoded exceptions first
-    if name in hardcoded_exceptions:
-        return hardcoded_exceptions[name]
-
     # Special handling for Patrick Mahomes
     if name == "Patrick Mahomes II" and "Patrick Mahomes II" in draft_data_names:
         return "Patrick Mahomes II"
@@ -144,7 +68,6 @@ def get_best_match_name(name, draft_data_names):
     if best_match and best_match[1] > 40:  # Using a threshold of 85 for match quality
         return best_match[0]
     return None
-
 
 
 def get_doe_color_class(doe):
@@ -187,6 +110,46 @@ def get_avg_tier_cost(draft_data, expected_values):
     print("Average Tier Costs:", avg_tier_cost)
     return avg_tier_cost
 
+def calculate_inflation_with_logging(draft_data, expected_values):
+    unmatched_players = []  # To store players that aren't directly matched
+    fuzzy_matches = []  # To store results of fuzzy matching
+    def get_fuzzy_value(player_full_name, column):
+        # Handle known discrepancies
+        
+        player_full_name = get_best_match_name(player_full_name)
+        best_match, score = process.extractOne(get_best_match_name(player_full_name), expected_values["Player"])
+        if score >= 30:
+            fuzzy_matches.append({
+                "Original Name": player_full_name,
+                "Best Match": best_match,
+                "Similarity Score": score
+            })
+            return expected_values.loc[expected_values["Player"] == best_match, column].values[0]
+        else:
+            unmatched_players.append(player_full_name)
+            return 0
+    # Place for your other inflation calculations
+    total_value = 0
+    for player in draft_data:
+        player_full_name = player["metadata"]["first_name"] + " " + player["metadata"]["last_name"]
+        expected_value = expected_values.loc[expected_values["Player"] == player_full_name, "Value"]
+        if expected_value.empty:
+            value = get_fuzzy_value(player_full_name, "Value")
+            total_value += value
+            print(f"Used fuzzy match for {player_full_name}, matched with value: {value}")
+            total_value += expected_value.values[0]
+    # Insert the diagnostic code here
+    missing_tier_players = expected_values[expected_values['Tier'].isna()]["Player"]
+    print(f"Players missing tier info: {len(missing_tier_players)}")
+    for player in missing_tier_players:
+        print(player)
+    # Continue with your other calculations
+    return {
+        "overall": inflation,  # Assuming you calculate this in your function
+        "positional": positional_inflation,  # Assuming you calculate this in your function
+        "unmatched_players": unmatched_players,
+        "fuzzy_matches": fuzzy_matches
+    }
 # Calculate tier-based inflation within each position
 def calculate_positional_tier_inflation(draft_data, expected_values):
     unmatched_tier_players = []
@@ -202,31 +165,35 @@ def calculate_positional_tier_inflation(draft_data, expected_values):
     positional_tier_inflation[position][tier] = (tier_spent - tier_value) / tier_value if tier_value != 0 else 0
     print("Players not matched for tier data:", unmatched_tier_players)
 
-
-def calculate_doe_values(draft_data, expected_values, tiered_inflation):
+def calculate_doe_values(draft_data, expected_values, positional_tier_inflation):
     doe_values = {}
-    
-    for position in ["QB", "RB", "WR", "TE"]:
-        doe_values[position] = {}
-        for tier in range(1, TIER_COUNT + 1):
-            tier_players = [
-                player for player in draft_data 
-                if player["metadata"]["position"] == position and 
-                not expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Tier"].empty and 
-                expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Tier"].values[0] == tier
-            ]
-            print(f"Calculating tier_value for position {position} and tier {tier}.")
-            tier_value = sum(
-                [expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Value"].values[0] 
-                 if not expected_values.loc[expected_values["Player"] == player["metadata"]["first_name"] + " " + player["metadata"]["last_name"], "Value"].empty 
-                 else 0 for player in tier_players]
-            )
-            tier_inflation = tiered_inflation[position][tier]
-            doe = tier_value * tier_inflation
-            # Divide the total DOE by the number of picks for the tier to get the average
-            avg_doe = doe / len(tier_players) if len(tier_players) != 0 else 0
-            doe_values[position][tier] = avg_doe
+    for player_data in draft_data:
+        position = player_data['metadata']['position']
+        # ... existing logic for processing players using player_data ...
+    return doe_values
 
+    # Assuming draft_data is a dictionary with positions as keys and a list of players as values
+    for position, players in draft_data.items():
+        doe_values[position] = {}
+        for player in players:
+            # Extracting player name
+            player_name = player["metadata"]["first_name"] + " " + player["metadata"]["last_name"]
+            
+            # Getting expected value for the player
+            value_series = expected_values.loc[expected_values["Player"] == player_name, "Value"]
+            tier_value = value_series.iloc[0] if not value_series.empty else 0
+            
+            # Assuming player has a 'tier' field which tells us the tier of the player
+            tier = player['tier']
+            
+            # Calculate DOE
+            tier_inflation = tiered_inflation[position].get(tier, 0)  # Assuming tiered_inflation has position -> tier -> inflation structure
+            doe = tier_value * tier_inflation
+    
+            # Divide the total DOE by the number of players for the tier to get the average
+            avg_doe = doe / len(players) if players else 0
+            doe_values[position][tier] = avg_doe
+    
     return doe_values
 
 
@@ -292,6 +259,23 @@ def get_draft_data(draft_id):
         print(f"Error: Unable to fetch data for draft ID {draft_id}.")
         return []
 
+
+def get_best_match_name(name, draft_data_names):
+    # Special handling for Patrick Mahomes
+    if name == "Patrick Mahomes II" and "Patrick Mahomes II" in draft_data_names:
+        return "Patrick Mahomes II"
+    elif name == "Patrick Mahomes II" and "Patrick Mahomes" in draft_data_names:
+        return "Patrick Mahomes"
+    
+    best_match = process.extractOne(name, draft_data_names)
+    if best_match and best_match[1] > 85:  # Using a threshold of 85 for match quality
+        return best_match[0]
+    return None
+
+# Added the fuzzy matching functions
+
+# Fuzzy matching utilities
+
 def fuzzy_match_name(name, name_list, score_cutoff=85):
     """Finds the best match for a given name in a list of names using fuzzy string matching.
     Returns the best match and its similarity score."""
@@ -300,61 +284,40 @@ def fuzzy_match_name(name, name_list, score_cutoff=85):
         return best_match, score
     return None, None
 
-def map_players_to_ev_data(draft_data):
-    # Load positional data and combine into one dataframe
-    qb_data = pd.read_csv('FantasyPros_2023_Draft_QB_Rankings.csv')
-    rb_data = pd.read_csv('FantasyPros_2023_Draft_RB_Rankings.csv')
-    wr_data = pd.read_csv('FantasyPros_2023_Draft_WR_Rankings.csv')
-    te_data = pd.read_csv('FantasyPros_2023_Draft_TE_Rankings.csv')
-    
-    # Combine all positional data into one dataframe
-    all_data = pd.concat([qb_data, rb_data, wr_data, te_data], ignore_index=True)
-    
-    # Load auction values data
-    auction_values_data = pd.read_csv('Standard_Auction_Values.csv')
-    
-    # Merge the two dataframes based on player names
-    merged_data = pd.merge(all_data, auction_values_data, left_on='PLAYER NAME', right_on='Player', how='left')
-    
+
+def map_players_to_ev_data(draft_data, ev_data):
+    """Maps players from draft data to their corresponding entries in the EV data using exact and fuzzy matching.
+    Returns the updated draft data, a list of unmatched players, and a list of fuzzy matches made."""
+    player_names_ev = ev_data['Name'].tolist()
     unmatched_players = []
     fuzzy_matches = []
-    
-    for player in draft_data:
-        player_name = player['metadata']['first_name'] + ' ' + player['metadata']['last_name']
-        best_match_name = get_best_match_name(player_name, merged_data['PLAYER NAME'].tolist())
-        matched_row = merged_data[merged_data['PLAYER NAME'] == best_match_name]
 
-        
-        if not matched_row.empty:
-            player['Value'] = matched_row['Value'].values[0]
-            player['Tier'] = matched_row['TIERS'].values[0]
+    for player in draft_data:
+        if player['Name'] in player_names_ev:
+            # Exact match found
+            continue
         else:
-            best_match, score = process.extractOne(player_name, merged_data['PLAYER NAME'].tolist())
-            if score > 50:
-                player['Value'] = merged_data[merged_data['PLAYER NAME'] == best_match]['Value'].values[0]
-                player['Tier'] = merged_data[merged_data['PLAYER NAME'] == best_match]['TIERS'].values[0]
+            # Try fuzzy matching
+            best_match, score = fuzzy_match_name(player['Name'], player_names_ev)
+            if best_match:
                 fuzzy_matches.append({
-                    'Original Name': player_name,
-                    'Best Match': best_match,
-                    'Similarity Score': score
+                    "Original Name": player['Name'],
+                    "Best Match": best_match,
+                    "Similarity Score": score
                 })
+                # Update player name in draft data with the best match
+                player['Name'] = best_match
             else:
-                unmatched_players.append(player_name)
-                player['Value'] = 0
-                player['Tier'] = np.nan  # or you can assign a default tier
+                unmatched_players.append(player['Name'])
 
     return draft_data, unmatched_players, fuzzy_matches
 
-
 # 2. Modify the tier_mapping function.
 def tier_mapping(player_name, position, tier_data):
-    for index, tier in tier_data.iterrows():
-        if player_name in tier['Players']:
-            return tier['Tier']
-    print(f"Tier not available for: {player_name}")
-    return "Not Available"
-
-
+    if player_name in exception_list:
+        player_name = exception_list[player_name]
+    if player_name in tier_data:
+        return tier_data[player_name]
 # 3. Add logging for players who don't map to a tier.
 def get_tiers_for_draft_data(draft_data, tier_data_by_position):
     unmapped_players = []
@@ -368,7 +331,6 @@ def get_tiers_for_draft_data(draft_data, tier_data_by_position):
     if unmapped_players:
         print(f"Players not mapped to any tier: {', '.join(unmapped_players)}")
     return draft_data
-
 
 
 def calculate_inflation_rates(draft_data):
@@ -387,7 +349,6 @@ def calculate_inflation_rates(draft_data):
                 "Best Match": best_match,
                 "Similarity Score": score
             })
-            print(f"Fetching fuzzy matched value for player {player_full_name} matched with {best_match} using column {column}.")
             return expected_values.loc[expected_values["Player"] == best_match, column].values[0]
         else:
             unmatched_players.append(player_full_name)
@@ -395,17 +356,13 @@ def calculate_inflation_rates(draft_data):
 
     # Load the rankings and tiers for each position
     rankings = {
-        "QB": pd.read_csv('FantasyPros_2023_Draft_QB_Rankings.csv'),
-        "RB": pd.read_csv('FantasyPros_2023_Draft_RB_Rankings.csv'),
-        "WR": pd.read_csv('FantasyPros_2023_Draft_WR_Rankings.csv'),
-        "TE": pd.read_csv('FantasyPros_2023_Draft_TE_Rankings.csv')
+        "QB": pd.read_csv('C:\\Users\\lasab\\Downloads\\FantasyPros_2023_Draft_QB_Rankings (1).csv'),
+        "RB": pd.read_csv('C:\\Users\\lasab\\Downloads\\FantasyPros_2023_Draft_RB_Rankings.csv'),
+        "WR": pd.read_csv('C:\\Users\\lasab\\Downloads\\FantasyPros_2023_Draft_WR_Rankings.csv'),
+        "TE": pd.read_csv('C:\\Users\\lasab\\Downloads\\FantasyPros_2023_Draft_TE_Rankings.csv')
     }
     
-    expected_values = pd.read_csv(EXPECTED_VALUES_PATH, delimiter=',')
-    print("Columns in expected_values:", expected_values.columns)
-    print(expected_values.head())
-    if ' Value ' in expected_values.columns or 'Value ' in expected_values.columns or ' Value' in expected_values.columns:
-        print("Column 'Value' has extra spaces!")
+    expected_values = pd.read_csv(EXPECTED_VALUES_PATH)
     expected_values['Value'] = expected_values['Value'].str.replace('$', '').astype(int)
 
     # Calculate overall inflation
@@ -414,10 +371,8 @@ def calculate_inflation_rates(draft_data):
     total_value = 0
     for player in draft_data:
         player_full_name = player["metadata"]["first_name"] + " " + player["metadata"]["last_name"]
-        print("Calculating expected_value for player:", player_full_name)
         expected_value = expected_values.loc[expected_values["Player"] == player_full_name, "Value"]
         if expected_value.empty:
-            print("Attempting fuzzy match for player:", player_full_name)
             value = get_fuzzy_value(player_full_name, "Value")
             total_value += value
             print(f"Used fuzzy match for {player_full_name}, matched with value: {value}")
@@ -499,150 +454,9 @@ def diagnose_mahomes(draft_data, expected_values):
             print(mahomes_expected_values)
             print(name, "not found in expected_values.")
             
-
-def calculate_r2(x, y):
-    try:
-        x = np.array(x).reshape((-1, 1))
-        y = np.array(y)
-        
-        if len(np.unique(x)) < 2:
-            # If fewer than 2 unique x-values, return "N/A"
-            return "N/A"
-        
-        if np.isnan(x).any() or np.isnan(y).any() or np.isinf(x).any() or np.isinf(y).any():
-            # Check for NaN or infinity values in x or y
-            return "N/A"
-
-    except ValueError as e:
-        print(f"Error when reshaping x and y: {e}")
-        return "N/A"  # Return a default value for R2 if conversion fails
-
-    model = LinearRegression().fit(x, y)
-    y_pred = model.predict(x)
-    
-    return r2_score(y, y_pred)
-
-def calculate_r2_by_position(raw_data):
-    position_r2 = {}
-    position_colors = {
-        "RB": "blue",
-        "WR": "green",
-        "QB": "red",
-        "TE": "orange",
-    }
-
-    for position, color in position_colors.items():
-        x = [pick["pick_no"] for pick in raw_data if pick["metadata"]["position"] == position]
-        
-        y_raw = [pick["metadata"]["amount"] for pick in raw_data if pick["metadata"]["position"] == position]
-        y = []
-        
-        for val in y_raw:
-            try:
-                y.append(int(val))
-            except ValueError:
-                print(f"Cannot convert to integer: {val}")
-                y.append(val)  # Keep the original value; this might cause errors downstream
-        
-        r2_value = calculate_r2(x, y)
-        if r2_value != "N/A":
-            position_r2[position] = {
-                "r2": r2_value,
-                "cost_of_waiting": {
-                    "1_pick": r2_value * 0.005,
-                    "5_picks": r2_value * 0.025,
-                    "10_picks": r2_value * 0.05,
-                    "20_picks": r2_value * 0.10,
-                }
-            }
-        else:
-            position_r2[position] = {
-                "r2": "0",
-                "cost_of_waiting": {
-                    "1_pick": "0",
-                    "5_picks": "0",
-                    "10_picks": "0",
-                    "20_picks": "0",
-                }
-            }
-
-    return position_r2
-
-
 @app.route('/')
 def index():
-    # Default structures
-    default_positions = ['QB', 'RB', 'WR', 'TE']
-    
-    default_positional_inflation = {pos: 0 for pos in default_positions}
-    default_tiered_inflation = {pos: {tier: 0 for tier in range(1, 10)} for pos in default_positions}
-    default_picks_per_tier = {pos: {tier: 0 for tier in range(1, 10)} for pos in default_positions}
-    default_total_picks = sum([default_picks_per_tier[pos][tier] for pos in default_positions for tier in range(1, 10)])
-    default_doe_values = {pos: {tier: 0 for tier in range(1, 10)} for pos in default_positions}
-    default_average_tier_costs = {pos: {tier: 0 for tier in range(1, 10)} for pos in default_positions}
-    default_avg_tier_costs = {pos: {tier: 0 for tier in range(1, 10)} for pos in default_positions}
-
-    return render_template(
-        'inflation.html', 
-        overall_inflation=0, 
-        positional_inflation=default_positional_inflation, 
-        tiered_inflation=default_tiered_inflation,
-        picks_per_tier=default_picks_per_tier,
-        total_picks=default_total_picks,
-        doe_values=default_doe_values,
-        average_tier_costs=default_average_tier_costs,
-        avg_tier_costs=default_avg_tier_costs,
-        get_color_class=get_color_class
-    )
-@app.route('/scatter_data', methods=['GET'])
-def scatter_data():
-    draft_id = request.args.get('draft_id')
-    if not draft_id:
-        return jsonify({"error": "Draft ID is required"}), 400
-
-    # Fetch draft data
-    draft_data = get_draft_data(draft_id)
-
-    # Load the expected values data
-    ev_data = pd.read_csv(EXPECTED_VALUES_PATH)
-
-    # Map players in the draft data to their expected values
-    draft_data, unmatched_players, fuzzy_matches = map_players_to_ev_data(draft_data)
-
-    # Prepare the data for scatter plot
-    scatter_data = {
-        "pick_no": [],
-        "metadata_amount": [],
-        "colors": [],
-        "player_names": [],
-        "expected_values": []
-    }
-
-    for index, player in enumerate(draft_data):
-        player_name = player['metadata']['first_name'] + ' ' + player['metadata']['last_name']
-        expected_value = player['Value']
-        
-        # Handle NaN values for expected value
-        if pd.isna(expected_value):
-            expected_value = "$0"  # or whatever default value you prefer
-        
-        scatter_data["pick_no"].append(index + 1)  # Assuming index starts from 0
-        scatter_data["metadata_amount"].append(int(player['metadata']['amount']))
-        player_position = player['metadata']['position']
-        color = POSITION_COLORS.get(player_position, "gray")  # Use gray as a default color for any other positions
-        scatter_data["colors"].append(color)
-        scatter_data["player_names"].append(player_name)
-        scatter_data["expected_values"].append(expected_value)
-
-    # Calculate R^2 values for each position
-    r2_values = calculate_r2_by_position(draft_data)
-
-    response_data = {
-        "scatterplot": scatter_data,
-        "r2_values": r2_values
-    }
-
-    return jsonify(response_data)
+    return render_template('inflation.html', overall_inflation=0)
 
     # If it's a GET request, render the page normally without expecting the draft_id
 @app.route('/inflation', methods=['GET', 'POST'])
@@ -716,6 +530,43 @@ def add_header(response):
     return response
 
 
+def map_players_to_ev_data(draft_data, ev_data):
+    unmatched_players = []
+    fuzzy_matches = []
+    
+    ev_player_names = ev_data['Player'].tolist()
+
+    for player in draft_data:
+        player_name = player['metadata']['first_name'] + ' ' + player['metadata']['last_name']
+
+        if player_name in ev_player_names:
+            player['Value'] = ev_data[ev_data['Player'] == player_name]['Value'].values[0]
+            player['Tier'] = ev_data[ev_data['Player'] == player_name]['Tier'].values[0]
+        else:
+            best_match, score = process.extractOne(player_name, ev_player_names)
+            if score > 50:
+                player['Value'] = ev_data[ev_data['Player'] == best_match]['Value'].values[0]
+                player['Tier'] = ev_data[ev_data['Player'] == best_match]['Tier'].values[0]
+                fuzzy_matches.append({
+                    'Original Name': player_name,
+                    'Best Match': best_match,
+                    'Similarity Score': score
+                })
+            else:
+                unmatched_players.append(player_name)
+                player['Value'] = 0
+                player['Tier'] = max(ev_data['Tier'])  # Assign the last tier
+
+    return draft_data, unmatched_players, fuzzy_matches
+
+
+# Update the function call to map_players_to_ev_data
+draft_data, unmatched_players, fuzzy_matches = map_players_to_ev_data(draft_data, ev_data)
+
+# Handle players without tiers
+if "Not Available" in picks_per_tier["RB"]:
+    del picks_per_tier["RB"]["Not Available"]
+
 
 if __name__ == "__main__":
-    app.run(debug=True, threaded=True, host='0.0.0.0', port=5050)
+    app.run(debug=True, threaded=True)
