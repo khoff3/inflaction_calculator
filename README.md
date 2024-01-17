@@ -9,6 +9,7 @@
 # How to Run
 
 * Open and execute the 'trial_backend.py' file
+* Go to specified endpoint for flask app
 
 # Example Output
 
