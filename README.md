@@ -4,11 +4,12 @@
 
 * Standard Auction Values come from ETR at the moment but could easily be extracted from any rankings
 
-* PLayer name mappings are known anomolies when running the fuzzy matching. Sleeper does not have any suffixes
+* Player name mappings are known anomolies when running the fuzzy matching. Sleeper does not have any suffixes
 
 # How to Run
 
 * Open and execute the 'trial_backend.py' file
+  
 * Go to specified endpoint for flask app
 
 # Example Output
