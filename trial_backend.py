@@ -13,48 +13,36 @@ from flask_session import Session
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
-#test file path
-file_path = 'player_name_mappings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-file_path = 'FantasyPros_2023_Draft_QB_Rankings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-file_path = 'FantasyPros_2023_Draft_RB_Rankings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-file_path = 'FantasyPros_2023_Draft_WR_Rankings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-file_path = 'FantasyPros_2023_Draft_TE_Rankings.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-
-file_path = 'Standard_Auction_Values.csv'
-if os.path.exists(file_path):
-    print(f"{file_path} exists!")
-else:
-    print(f"{file_path} does not exist!")
-
 # Define the path to the folder containing inflation.html relative to the script
 TEMPLATE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 
 # Define paths in a cross-platform way
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # This gets the directory where the script is located
 TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')  # Assuming your templates are in a 'templates' directory inside your script's directory
-EXPECTED_VALUES_PATH = os.path.join(BASE_DIR, 'Standard_Auction_Values.csv')
-MAPPINGS_PATH = os.path.join(BASE_DIR, 'player_name_mappings.csv')
+EXPECTED_VALUES_PATH = os.path.join(BASE_DIR, '2023', 'Standard_Auction_Values.csv')
+MAPPINGS_PATH = os.path.join(BASE_DIR, '2023', 'player_name_mappings.csv')
+
+# Ensure the 2024 folder exists
+new_year_folder = os.path.join(BASE_DIR, '2024')
+if not os.path.exists(new_year_folder):
+    os.makedirs(new_year_folder)
+
+# Test file paths for 2023
+file_paths = [
+    '2023/player_name_mappings.csv',
+    '2023/FantasyPros_2023_Draft_QB_Rankings.csv',
+    '2023/FantasyPros_2023_Draft_RB_Rankings.csv',
+    '2023/FantasyPros_2023_Draft_WR_Rankings.csv',
+    '2023/FantasyPros_2023_Draft_TE_Rankings.csv',
+    '2023/Standard_Auction_Values.csv'
+]
+
+for file_path in file_paths:
+    full_path = os.path.join(BASE_DIR, file_path)
+    if os.path.exists(full_path):
+        print(f"{full_path} exists!")
+    else:
+        print(f"{full_path} does not exist!")
 
 # Initializations
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
@@ -75,8 +63,7 @@ extended_mapping = pd.read_csv(MAPPINGS_PATH)
 exception_list.update(extended_mapping)
 app.config['SECRET_KEY'] = 'qZw6G6Zy8EGdgR6UfHMgERGYiEZpvODt'
 
-
-#position colors
+# position colors
 POSITION_COLORS = {
     "QB": "red",
     "RB": "green",
@@ -109,17 +96,18 @@ hardcoded_exceptions = {
     "Marquez Valdes-Scantling": "Marquez Valdes-Scantling"
 }
 exception_list.update(hardcoded_exceptions)
+
 class CustomEncoder(json.JSONEncoder):
     def default(self, obj):
         # Convert NumPy types to Python native types
         if isinstance(obj, np.generic):
             return obj.item()
         # Handle other non-serializable types here as needed
-        # ...
-        # Fallback to the super's default method
         return super(CustomEncoder, self).default(obj)
+
 # Set Flask's JSON encoder to the custom encoder we've defined
 app.json_encoder = CustomEncoder
+
 def sanitize_data(data):
     if isinstance(data, dict):
         return {sanitize_data(key): sanitize_data(value) for key, value in data.items()}
@@ -144,8 +132,6 @@ def get_best_match_name(name, draft_data_names):
     if best_match and best_match[1] > 40:  # Using a threshold of 85 for match quality
         return best_match[0]
     return None
-
-
 
 def get_doe_color_class(doe):
     if doe is None:
@@ -202,7 +188,6 @@ def calculate_positional_tier_inflation(draft_data, expected_values):
     positional_tier_inflation[position][tier] = (tier_spent - tier_value) / tier_value if tier_value != 0 else 0
     print("Players not matched for tier data:", unmatched_tier_players)
 
-
 def calculate_doe_values(draft_data, expected_values, tiered_inflation):
     doe_values = {}
     
@@ -228,9 +213,6 @@ def calculate_doe_values(draft_data, expected_values, tiered_inflation):
             doe_values[position][tier] = avg_doe
 
     return doe_values
-
-
-@app.template_filter('get_color_class')
 
 @app.template_filter('get_color_class')
 def get_color_class(value):
@@ -286,7 +268,6 @@ def get_draft_data(draft_id):
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
-
         return data
     else:
         print(f"Error: Unable to fetch data for draft ID {draft_id}.")
@@ -302,16 +283,16 @@ def fuzzy_match_name(name, name_list, score_cutoff=85):
 
 def map_players_to_ev_data(draft_data):
     # Load positional data and combine into one dataframe
-    qb_data = pd.read_csv('FantasyPros_2023_Draft_QB_Rankings.csv')
-    rb_data = pd.read_csv('FantasyPros_2023_Draft_RB_Rankings.csv')
-    wr_data = pd.read_csv('FantasyPros_2023_Draft_WR_Rankings.csv')
-    te_data = pd.read_csv('FantasyPros_2023_Draft_TE_Rankings.csv')
+    qb_data = pd.read_csv('2023/FantasyPros_2023_Draft_QB_Rankings.csv')
+    rb_data = pd.read_csv('2023/FantasyPros_2023_Draft_RB_Rankings.csv')
+    wr_data = pd.read_csv('2023/FantasyPros_2023_Draft_WR_Rankings.csv')
+    te_data = pd.read_csv('2023/FantasyPros_2023_Draft_TE_Rankings.csv')
     
     # Combine all positional data into one dataframe
     all_data = pd.concat([qb_data, rb_data, wr_data, te_data], ignore_index=True)
     
     # Load auction values data
-    auction_values_data = pd.read_csv('Standard_Auction_Values.csv')
+    auction_values_data = pd.read_csv('2023/Standard_Auction_Values.csv')
     
     # Merge the two dataframes based on player names
     merged_data = pd.merge(all_data, auction_values_data, left_on='PLAYER NAME', right_on='Player', how='left')
@@ -324,7 +305,6 @@ def map_players_to_ev_data(draft_data):
         best_match_name = get_best_match_name(player_name, merged_data['PLAYER NAME'].tolist())
         matched_row = merged_data[merged_data['PLAYER NAME'] == best_match_name]
 
-        
         if not matched_row.empty:
             player['Value'] = matched_row['Value'].values[0]
             player['Tier'] = matched_row['TIERS'].values[0]
@@ -345,7 +325,6 @@ def map_players_to_ev_data(draft_data):
 
     return draft_data, unmatched_players, fuzzy_matches
 
-
 # 2. Modify the tier_mapping function.
 def tier_mapping(player_name, position, tier_data):
     for index, tier in tier_data.iterrows():
@@ -353,7 +332,6 @@ def tier_mapping(player_name, position, tier_data):
             return tier['Tier']
     print(f"Tier not available for: {player_name}")
     return "Not Available"
-
 
 # 3. Add logging for players who don't map to a tier.
 def get_tiers_for_draft_data(draft_data, tier_data_by_position):
@@ -369,10 +347,7 @@ def get_tiers_for_draft_data(draft_data, tier_data_by_position):
         print(f"Players not mapped to any tier: {', '.join(unmapped_players)}")
     return draft_data
 
-
-
 def calculate_inflation_rates(draft_data):
-
     unmatched_players = []  # To store players that aren't directly matched
     fuzzy_matches = []  # To store results of fuzzy matching
     
@@ -395,10 +370,10 @@ def calculate_inflation_rates(draft_data):
 
     # Load the rankings and tiers for each position
     rankings = {
-        "QB": pd.read_csv('FantasyPros_2023_Draft_QB_Rankings.csv'),
-        "RB": pd.read_csv('FantasyPros_2023_Draft_RB_Rankings.csv'),
-        "WR": pd.read_csv('FantasyPros_2023_Draft_WR_Rankings.csv'),
-        "TE": pd.read_csv('FantasyPros_2023_Draft_TE_Rankings.csv')
+        "QB": pd.read_csv('2023/FantasyPros_2023_Draft_QB_Rankings.csv'),
+        "RB": pd.read_csv('2023/FantasyPros_2023_Draft_RB_Rankings.csv'),
+        "WR": pd.read_csv('2023/FantasyPros_2023_Draft_WR_Rankings.csv'),
+        "TE": pd.read_csv('2023/FantasyPros_2023_Draft_TE_Rankings.csv')
     }
     
     expected_values = pd.read_csv(EXPECTED_VALUES_PATH, delimiter=',')
@@ -484,7 +459,6 @@ def calculate_inflation_rates(draft_data):
 
 inflation_rates = None
 
-
 def diagnose_mahomes(draft_data, expected_values):
     # Check for both Patrick Mahomes and Patrick Mahomes II
     mahomes_names = ["Patrick Mahomes", "Patrick Mahomes II"]
@@ -499,7 +473,6 @@ def diagnose_mahomes(draft_data, expected_values):
             print(mahomes_expected_values)
             print(name, "not found in expected_values.")
             
-
 def calculate_r2(x, y):
     try:
         x = np.array(x).reshape((-1, 1))
@@ -568,7 +541,6 @@ def calculate_r2_by_position(raw_data):
 
     return position_r2
 
-
 @app.route('/')
 def index():
     # Default structures
@@ -594,6 +566,7 @@ def index():
         avg_tier_costs=default_avg_tier_costs,
         get_color_class=get_color_class
     )
+
 @app.route('/scatter_data', methods=['GET'])
 def scatter_data():
     draft_id = request.args.get('draft_id')
@@ -644,7 +617,6 @@ def scatter_data():
 
     return jsonify(response_data)
 
-    # If it's a GET request, render the page normally without expecting the draft_id
 @app.route('/inflation', methods=['GET', 'POST'])
 def get_inflation_rate():
     # Check if request is for JSON data (e.g., AJAX request for live updates)
@@ -714,8 +686,6 @@ def get_inflation_rate():
 def add_header(response):
     response.cache_control.no_store = True
     return response
-
-
 
 if __name__ == "__main__":
     app.run(debug=True, threaded=True, host='0.0.0.0', port=5050)
