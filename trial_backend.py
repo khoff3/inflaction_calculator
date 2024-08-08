@@ -12,37 +12,56 @@ from flask_wtf.csrf import CSRFProtect
 from flask_session import Session
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
+import glob
 
-# Define the path to the folder containing inflation.html relative to the script
-TEMPLATE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Define base directory
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Define paths in a cross-platform way
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # This gets the directory where the script is located
-TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')  # Assuming your templates are in a 'templates' directory inside your script's directory
-EXPECTED_VALUES_PATH = os.path.join(BASE_DIR, '2023', 'Standard_Auction_Values.csv')
-MAPPINGS_PATH = os.path.join(BASE_DIR, '2023', 'player_name_mappings.csv')
+def get_latest_data_folder(base_dir):
+    """Retrieve the most recent year folder for data files."""
+    year_folders = glob.glob(os.path.join(base_dir, "20[0-9][0-9]"))  # Adjust the pattern if naming changes
+    latest_folder = max(year_folders, key=os.path.getmtime)  # Get the most recently modified directory
+    return latest_folder
 
-# Ensure the 2024 folder exists
-new_year_folder = os.path.join(BASE_DIR, '2024')
-if not os.path.exists(new_year_folder):
-    os.makedirs(new_year_folder)
+# Use the latest data folder
+LATEST_DATA_DIR = get_latest_data_folder(BASE_DIR)
+LATEST_YEAR = os.path.basename(LATEST_DATA_DIR)  # Extracts the year from the folder name
 
-# Test file paths for 2023
+# Dynamic paths
+EXPECTED_VALUES_PATH = os.path.join(LATEST_DATA_DIR, 'Standard_Auction_Values.csv')
+MAPPINGS_PATH = os.path.join(LATEST_DATA_DIR, 'player_name_mappings.csv')
+
+# Dynamic filenames for CSV data
+csv_filenames = {
+    'QB': f'FantasyPros_{LATEST_YEAR}_Draft_QB_Rankings.csv',
+    'RB': f'FantasyPros_{LATEST_YEAR}_Draft_RB_Rankings.csv',
+    'WR': f'FantasyPros_{LATEST_YEAR}_Draft_WR_Rankings.csv',
+    'TE': f'FantasyPros_{LATEST_YEAR}_Draft_TE_Rankings.csv'
+}
+
+# Ensure the latest folder exists
+if not os.path.exists(LATEST_DATA_DIR):
+    os.makedirs(LATEST_DATA_DIR)
+
+# Check if all necessary files exist
 file_paths = [
-    '2023/player_name_mappings.csv',
-    '2023/FantasyPros_2023_Draft_QB_Rankings.csv',
-    '2023/FantasyPros_2023_Draft_RB_Rankings.csv',
-    '2023/FantasyPros_2023_Draft_WR_Rankings.csv',
-    '2023/FantasyPros_2023_Draft_TE_Rankings.csv',
-    '2023/Standard_Auction_Values.csv'
+    'player_name_mappings.csv',
+    f'FantasyPros_{LATEST_YEAR}_Draft_QB_Rankings.csv',
+    f'FantasyPros_{LATEST_YEAR}_Draft_RB_Rankings.csv',
+    f'FantasyPros_{LATEST_YEAR}_Draft_WR_Rankings.csv',
+    f'FantasyPros_{LATEST_YEAR}_Draft_TE_Rankings.csv',
+    'Standard_Auction_Values.csv'
 ]
 
 for file_path in file_paths:
-    full_path = os.path.join(BASE_DIR, file_path)
+    full_path = os.path.join(LATEST_DATA_DIR, file_path)
     if os.path.exists(full_path):
         print(f"{full_path} exists!")
     else:
         print(f"{full_path} does not exist!")
+
+# Define the path to the folder containing inflation.html relative to the script
+TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')  # Assuming your templates are in a 'templates' directory inside your script's directory
 
 # Initializations
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
@@ -283,16 +302,16 @@ def fuzzy_match_name(name, name_list, score_cutoff=85):
 
 def map_players_to_ev_data(draft_data):
     # Load positional data and combine into one dataframe
-    qb_data = pd.read_csv('2023/FantasyPros_2023_Draft_QB_Rankings.csv')
-    rb_data = pd.read_csv('2023/FantasyPros_2023_Draft_RB_Rankings.csv')
-    wr_data = pd.read_csv('2023/FantasyPros_2023_Draft_WR_Rankings.csv')
-    te_data = pd.read_csv('2023/FantasyPros_2023_Draft_TE_Rankings.csv')
+    qb_data = pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['QB']))
+    rb_data = pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['RB']))
+    wr_data = pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['WR']))
+    te_data = pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['TE']))
     
     # Combine all positional data into one dataframe
     all_data = pd.concat([qb_data, rb_data, wr_data, te_data], ignore_index=True)
     
     # Load auction values data
-    auction_values_data = pd.read_csv('2023/Standard_Auction_Values.csv')
+    auction_values_data = pd.read_csv(EXPECTED_VALUES_PATH)
     
     # Merge the two dataframes based on player names
     merged_data = pd.merge(all_data, auction_values_data, left_on='PLAYER NAME', right_on='Player', how='left')
@@ -370,10 +389,10 @@ def calculate_inflation_rates(draft_data):
 
     # Load the rankings and tiers for each position
     rankings = {
-        "QB": pd.read_csv('2023/FantasyPros_2023_Draft_QB_Rankings.csv'),
-        "RB": pd.read_csv('2023/FantasyPros_2023_Draft_RB_Rankings.csv'),
-        "WR": pd.read_csv('2023/FantasyPros_2023_Draft_WR_Rankings.csv'),
-        "TE": pd.read_csv('2023/FantasyPros_2023_Draft_TE_Rankings.csv')
+        "QB": pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['QB'])),
+        "RB": pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['RB'])),
+        "WR": pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['WR'])),
+        "TE": pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['TE']))
     }
     
     expected_values = pd.read_csv(EXPECTED_VALUES_PATH, delimiter=',')
