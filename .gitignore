@@ -1,6 +1,9 @@
 # Node modules
 node_modules/
 
+# Node module cache
+frontend/node_modules/.cache/
+
 # Logs
 logs/
 *.log
