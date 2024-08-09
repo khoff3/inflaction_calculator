@@ -1,10 +1,9 @@
 import pandas as pd
-import aiohttp
-import asyncio
-from flask import Flask, jsonify, request
+import requests
 import json
 import numpy as np
 import os
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import logging
 from sklearn.linear_model import LinearRegression
@@ -58,17 +57,17 @@ class CustomEncoder(json.JSONEncoder):
 
 app.json_encoder = CustomEncoder
 
-# Helper functions
-async def get_draft_data(draft_id):
+def get_draft_data(draft_id):
     url = f"https://api.sleeper.app/v1/draft/{draft_id}/picks"
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    logging.error(f"Error: Unable to fetch data for draft ID {draft_id}.")
-                    return []
+        response = requests.get(url)
+        logging.debug(f"Response Status Code: {response.status_code}")
+        if response.status_code == 200:
+            logging.debug(f"Response Data: {response.json()}")
+            return response.json()
+        else:
+            logging.error(f"Error: Unable to fetch data for draft ID {draft_id}.")
+            return []
     except Exception as e:
         logging.error(f"Exception occurred while fetching draft data: {e}")
         return []
@@ -95,10 +94,6 @@ def map_players_to_ev_data(draft_data):
 
     # Merge rankings data with auction values based on player name
     merged_data = pd.merge(all_data, auction_values_data, left_on='PLAYER NAME', right_on='Player', how='left')
-
-    # Log the columns to ensure that everything is loaded correctly
-    logging.debug(f"Auction Values DataFrame Columns: {auction_values_data.columns}")
-    logging.debug(f"Merged Data DataFrame Columns: {merged_data.columns}")
 
     unmatched_players = []
     fuzzy_matches = []
@@ -149,11 +144,7 @@ def get_picks_per_tier(draft_data, expected_values):
 
     return picks_per_tier
 
-
 def get_avg_tier_cost(draft_data, expected_values):
-    """
-    Calculate the average cost per tier for each position based on the expected values.
-    """
     avg_tier_costs = {}
     
     for position in ["QB", "RB", "WR", "TE"]:
@@ -180,9 +171,6 @@ def calculate_inflation_rates(draft_data):
     # Merge rankings with auction values
     all_rankings = pd.concat(rankings.values(), ignore_index=True)
     expected_values = pd.merge(all_rankings, auction_values_data, left_on='PLAYER NAME', right_on='Player', how='left')
-
-    # Debug the columns to ensure the TIERS column is present
-    logging.debug(f"Expected Values DataFrame Columns: {expected_values.columns}")
 
     # Ensure the 'Tier' column is consistent
     if 'TIERS' in expected_values.columns:
@@ -286,9 +274,7 @@ def calculate_r2_by_position(draft_data):
     return position_r2
 
 def calculate_doe_values(draft_data, expected_values, positional_tier_inflation):
-    doe_values = []
-    total_doe = 0
-    num_players = 0
+    doe_values = {}
 
     for player in draft_data:
         player_name = f"{player['metadata']['first_name']} {player['metadata']['last_name']}"
@@ -299,33 +285,174 @@ def calculate_doe_values(draft_data, expected_values, positional_tier_inflation)
             expected_values["Player"] == player_name, "Value"
         ].fillna(0).sum()
 
+        tier = expected_values.loc[
+            expected_values["Player"] == player_name, "Tier"
+        ].values[0] if not expected_values.loc[
+            expected_values["Player"] == player_name, "Tier"
+        ].empty else None
+
         if expected_value > 0:
             doe = amount_paid - expected_value
         else:
-            doe = amount_paid
+            doe = amount_paid  # Assume the entire amount as DOE if no expected value
 
-        total_doe += doe
-        num_players += 1
+        if player_position not in doe_values:
+            doe_values[player_position] = {}
 
-        doe_values.append({
-            "player_name": player_name,
-            "position": player_position,
-            "amount_paid": amount_paid,
-            "expected_value": expected_value,
-            "doe": doe
+        if tier is not None:
+            if tier not in doe_values[player_position]:
+                doe_values[player_position][tier] = 0
+            doe_values[player_position][tier] += doe
+
+    return doe_values
+
+def calculate_avg_tier_costs(expected_values):
+    avg_tier_costs = {}
+
+    grouped = expected_values.groupby(['Position', 'Tier'])['Value'].mean().reset_index()
+
+    for _, row in grouped.iterrows():
+        position, tier, avg_cost = row['Position'], row['Tier'], row['Value']
+        if position not in avg_tier_costs:
+            avg_tier_costs[position] = {}
+        avg_tier_costs[position][tier] = avg_cost
+
+    return avg_tier_costs
+
+def calculate_team_strengths_and_needs_by_tier(team_data, expected_values):
+    strengths_and_needs = {}
+
+    for team, data in team_data.items():
+        strengths_and_needs[team] = {}
+
+        for player in data['starters']:
+            player_name = player['name']
+            position = player['position']
+            tier = expected_values.loc[expected_values["Player"] == player_name, "Tier"]
+            if not tier.empty:
+                tier_value = tier.values[0]
+                # Classify the tier
+                if tier_value in [1, 2]:
+                    strengths_and_needs[team][position] = 'Strong'
+                elif tier_value in [3, 4, 5, 6]:
+                    strengths_and_needs[team][position] = 'Neutral'
+                else:
+                    strengths_and_needs[team][position] = 'Need'
+            else:
+                strengths_and_needs[team][position] = 'Unknown'  # For players not found in the expected values
+
+    return strengths_and_needs
+
+def process_team_breakdown(draft_data):
+    team_data = {}
+
+    for pick in draft_data:
+        slot = pick['draft_slot']
+        team = team_data.setdefault(slot, {
+            'starters': [],
+            'bench': [],
+            'totalSpend': 0,
+            'remainingBudget': 200,
         })
 
-    avg_doe = total_doe / num_players if num_players > 0 else 0
-    return doe_values, avg_doe
+        metadata = pick.get('metadata', {})
+        position = metadata.get('position')
+        amount = int(metadata.get('amount', 0))
+        player_name = f"{metadata.get('first_name', '')} {metadata.get('last_name', '')}"
 
+        # Directly append to the bench initially
+        team['bench'].append({
+            'name': player_name,
+            'position': position,
+            'amount': amount
+        })
+
+        team['totalSpend'] += amount
+        team['remainingBudget'] = 200 - team['totalSpend']
+
+    # The section below sorts and categorizes players into starters and bench
+    for team in team_data.values():
+        positions = {
+            'QB': [],
+            'RB': [],
+            'WR': [],
+            'TE': [],
+            'DEF': [],
+            'K': []
+        }
+
+        for player in team['bench']:
+            pos = player['position']
+            if pos in positions:
+                positions[pos].append(player)
+
+        for pos in positions:
+            positions[pos].sort(key=lambda x: x['amount'], reverse=True)
+
+        # Assign starters from the sorted positions
+        team['starters'].extend(positions['QB'][:1])
+        team['starters'].extend(positions['RB'][:2])
+        team['starters'].extend(positions['WR'][:3])
+        team['starters'].extend(positions['TE'][:1])
+
+        # Determine Flex position
+        flex_candidates = positions['RB'][2:] + positions['WR'][3:] + positions['TE'][1:]
+        flex_candidates.sort(key=lambda x: x['amount'], reverse=True)
+        team['starters'].extend(flex_candidates[:1])
+
+        team['starters'].extend(positions['DEF'][:1])
+        team['starters'].extend(positions['K'][:1])
+
+        # Remove the starters from the bench
+        team['bench'] = [player for player in team['bench'] if player not in team['starters']]
+
+    return team_data
+
+@app.route('/team_breakdown', methods=['GET'])
+def team_breakdown():
+    draft_id = request.args.get('draft_id')
+    if not draft_id:
+        return jsonify({"error": "Draft ID is required"}), 400
+    
+    try:
+        draft_data = get_draft_data(draft_id)
+        if not draft_data:
+            return jsonify({"error": "No draft data found"}), 404
+        
+        # Retrieve the auction values with expected tiers
+        _, expected_values = calculate_inflation_rates(draft_data)
+        
+        # Process team breakdown
+        team_data = process_team_breakdown(draft_data)
+        
+        # Calculate strengths and needs based on the tiers
+        strengths_and_needs = calculate_team_strengths_and_needs_by_tier(team_data, expected_values)
+        
+        # Attach the strengths and needs data to team_data
+        for team, data in team_data.items():
+            data['strengths_and_needs'] = strengths_and_needs.get(team, {})
+
+        return jsonify(team_data)
+
+    except KeyError as e:
+        logging.error(f"KeyError: Missing key in draft data - {e}")
+        return jsonify({"error": f"KeyError: Missing key in draft data - {e}"}), 500
+
+    except ValueError as e:
+        logging.error(f"ValueError: Invalid data format - {e}")
+        return jsonify({"error": f"ValueError: Invalid data format - {e}"}), 500
+
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}", exc_info=True)
+        return jsonify({"error": "An unexpected error occurred"}), 500
 
 @app.route('/scatter_data', methods=['GET'])
-async def scatter_data():
+def scatter_data():
     draft_id = request.args.get('draft_id')
     if not draft_id:
         return jsonify({"error": "Draft ID is required"}), 400
 
-    draft_data = await get_draft_data(draft_id)
+    draft_data = get_draft_data(draft_id)
     if not draft_data:
         return jsonify({"error": "No draft data found"}), 404
 
@@ -364,25 +491,30 @@ async def scatter_data():
     logging.debug(f"Scatter data response: {response_data}")
     return jsonify(response_data)
 
-@app.route('/inflation', methods=['POST'])
-async def get_inflation_rate():
-    draft_id = request.form.get('draft_id')
+@app.route('/inflation', methods=['GET', 'POST'])
+def get_inflation_rate():
+    if request.method == 'POST':
+        draft_id = request.form.get('draft_id')
+    elif request.method == 'GET':
+        draft_id = request.args.get('draft_id')
+
     if not draft_id:
         return jsonify({"error": "Draft ID is required"}), 400
 
     try:
-        draft_data = await get_draft_data(draft_id)
+        draft_data = get_draft_data(draft_id)
         if not draft_data:
             return jsonify({"error": "No draft data found"}), 404
 
         # Calculate inflation rates and expected values
         inflation_rates, expected_values = calculate_inflation_rates(draft_data)
 
-        # Check if 'Tier' is missing, and adjust the logic accordingly
+        # Calculate average tier costs
         if 'Tier' not in expected_values.columns:
-            avg_tier_costs = {}  # or handle the missing column case appropriately
+            logging.warning("The 'Tier' column is missing from expected values data.")
+            avg_tier_costs = {}  # Handle missing 'Tier' column case
         else:
-            avg_tier_costs = get_avg_tier_cost(draft_data, expected_values)
+            avg_tier_costs = calculate_avg_tier_costs(expected_values)
 
         # Calculate picks per tier and total picks
         picks_per_tier = get_picks_per_tier(draft_data, expected_values)
@@ -391,6 +523,7 @@ async def get_inflation_rate():
         # Calculate DOE values
         doe_values = calculate_doe_values(draft_data, expected_values, inflation_rates.get('positional_tiered', {}))
 
+        # Prepare response data
         response_data = {
             'overall_inflation': inflation_rates.get('overall', 0),
             'positional_inflation': inflation_rates.get('positional', {}),
@@ -401,13 +534,14 @@ async def get_inflation_rate():
             'doe_values': doe_values
         }
 
+        # Sanitize the response data
         response_data = sanitize_data(response_data)
         logging.debug(f"Inflation data response (JSON): {response_data}")
         return jsonify(response_data)
+        
     except Exception as e:
         logging.error(f"Error processing draft ID {draft_id}: {e}", exc_info=True)
         return jsonify({"error": "An error occurred while processing the request"}), 500
-
 
 @app.after_request
 def add_header(response):

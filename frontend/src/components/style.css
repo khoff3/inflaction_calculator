@@ -1,20 +1,59 @@
 .tab {
     display: flex;
+    gap: 10px;
     margin-bottom: 20px;
 }
 
-.tab button {
+.tablinks {
+    padding: 10px 20px;
     background-color: #f1f1f1;
     border: none;
-    padding: 10px 20px;
     cursor: pointer;
-    margin-right: 10px;
+    font-size: 16px;
 }
 
-.tab button:hover {
+.tablinks:hover, .tablinks.active {
     background-color: #ddd;
+    border-bottom: 2px solid #000;
+}.team-column {
+    border: 1px solid #ccc;
+    padding: 10px;
+    background-color: transparent; 
+    text-align: center; 
+    width: 100%; 
+}.team-column {
+    border: 1px solid #ccc;
+    padding: 10px;
+    background-color: transparent; 
+    text-align: center; 
+    width: 100%; 
 }
 
-.tab button.active {
-    background-color: #ccc;
+.player-card {
+    padding: 10px;
+    border-radius: 4px;
+    color: #fff; 
+    margin-bottom: 10px;
+    font-weight: bold;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 60px; /* Ensure uniform height */
+    box-sizing: border-box;
+    font-size: calc(10px + 0.5vw); /* Adjust this based on the largest name */
+}
+
+.team-column {
+    background-color: transparent;
+}
+
+.bench-header {
+    margin-top: 10px;
+    font-weight: bold;
+    color: #000;
 }
