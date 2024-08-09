@@ -1,9 +1,16 @@
 {
-  "dependencies": {
-    "axios": "^1.7.3",
-    "bootstrap": "^5.3.3",
-    "plotly.js": "^2.34.0",
-    "react-bootstrap": "^2.10.4",
-    "react-plotly.js": "^2.6.0"
-  }
+    "name": "inflation_calculator",
+    "version": "1.0.0",
+    "description": "A project to calculate inflation using a React frontend and a Flask backend",
+    "main": "index.js",
+    "scripts": {
+        "frontend": "cd frontend && npm start",
+        "backend": "cd backend && python trial_backend.py",
+        "start": "concurrently \"npm run frontend\" \"npm run backend\""
+    },
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
 }
