@@ -1,5 +1,7 @@
-# Node modules
+# Node modules and cache
 node_modules/
+.cache/
+
 
 # Node module cache
 frontend/node_modules/.cache/
