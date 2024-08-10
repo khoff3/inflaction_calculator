@@ -109,7 +109,6 @@ function InflationData({ draftId, isLive }) {
         const fetchInflationData = async () => {
             console.log("Fetching inflation data for draft ID:", draftId);
     
-            // Bypass cache if live data is being fetched
             if (!isLive) {
                 const cachedData = localStorage.getItem(`inflationData_${draftId}`);
                 if (cachedData) {
@@ -139,7 +138,6 @@ function InflationData({ draftId, isLive }) {
     
                 if (response.data) {
                     setInflationData(response.data);
-                    // Cache data only if not live
                     if (!isLive) {
                         localStorage.setItem(`inflationData_${draftId}`, JSON.stringify(response.data)); 
                     }
@@ -174,7 +172,7 @@ function InflationData({ draftId, isLive }) {
         return 'neutral';
     };
 
-    if (loading) {
+    if (!inflationData && loading) {
         return <Spinner animation="border" />;
     }
 
