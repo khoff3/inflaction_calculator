@@ -1,57 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import Plot from 'react-plotly.js';
 import { Table } from 'react-bootstrap';
+import { useDataContext } from './utils/DataProvider';
 
-function ScatterPlot({ draftId, isLive }) {
-    const [scatterData, setScatterData] = useState(null);
-    const [r2Data, setR2Data] = useState(null);
+function ScatterPlot() {
+    const { scatterData, r2Data, loading, fetchScatterData } = useDataContext();
+    const draftId = 'someDraftId'; // Replace with dynamic draftId if necessary
 
     useEffect(() => {
-        const fetchScatterData = async () => {
-            console.log("Fetching scatter plot data for draft ID:", draftId);
+        fetchScatterData(draftId, true); // Pass `true` if it's live, or use your isLive flag
+    }, [draftId, fetchScatterData]);
 
-            // Bypass cache if the draft is live
-            if (!isLive) {
-                const cachedScatterData = localStorage.getItem(`scatterData_${draftId}`);
-                const cachedR2Data = localStorage.getItem(`r2Data_${draftId}`);
-
-                if (cachedScatterData && cachedR2Data) {
-                    console.log("Loading cached scatter plot data for draft ID:", draftId);
-                    setScatterData(JSON.parse(cachedScatterData));
-                    setR2Data(JSON.parse(cachedR2Data));
-                    return;
-                }
-            }
-
-            try {
-                const response = await axios.get(`/scatter_data?draft_id=${draftId}&is_live=${isLive}`);
-                if (response.data) {
-                    setScatterData(response.data.scatterplot);
-                    setR2Data(response.data.r2_values);
-
-                    // Cache data only if not live
-                    if (!isLive) {
-                        localStorage.setItem(`scatterData_${draftId}`, JSON.stringify(response.data.scatterplot));
-                        localStorage.setItem(`r2Data_${draftId}`, JSON.stringify(response.data.r2_values));
-                    }
-                    
-                    console.log("Scatter plot data loaded successfully.");
-                }
-            } catch (error) {
-                console.error('Error fetching scatter data:', error);
-            }
-        };
-
-        fetchScatterData();
-
-        if (isLive) {
-            const interval = setInterval(fetchScatterData, 10000); // Fetch new data every 10 seconds if live
-            return () => clearInterval(interval); // Clear interval on component unmount or when isLive changes
-        }
-    }, [draftId, isLive]);
-
-    if (!scatterData) return <div>Loading...</div>;
+    if (loading) return <div>Loading...</div>;
 
     return (
         <div style={{ width: '100%', height: '100%' }}>
@@ -68,11 +28,11 @@ function ScatterPlot({ draftId, isLive }) {
                 layout={{
                     xaxis: { title: 'Pick Number' },
                     yaxis: { title: 'Amount' },
-                    autosize: true, // Enable autosizing to fit the plot to the container
+                    autosize: true,
                     margin: { l: 50, r: 50, b: 50, t: 50, pad: 4 },
                 }}
                 useResizeHandler={true}
-                style={{ width: '100%', height: '100%' }} // Make sure the plot uses the full container
+                style={{ width: '100%', height: '100%' }}
             />
 
             {r2Data && (

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ScatterPlot from './ScatterPlot';
 import InflationData from './InflationData';
 import TeamBreakdown from './TeamBreakdown';
+import { useDataContext } from './utils/DataProvider';
 
 function Dashboard() {
     const draftIdFromUrl = new URLSearchParams(window.location.search).get('draft_id');
@@ -12,6 +13,9 @@ function Dashboard() {
     const [isLive, setIsLive] = useState(isLiveFromUrl); // Track whether the draft is live or not
     const [draftOrder, setDraftOrder] = useState(''); // State to hold draft order input
     const [parsedDraftOrder, setParsedDraftOrder] = useState([]); // Holds the parsed array of names
+
+    // Fetch data from context
+    const { scatterData, inflationData, teamData, loading } = useDataContext();
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -29,7 +33,6 @@ function Dashboard() {
     const handleUnlockDraftId = () => {
         setIsLocked(!isLocked); // Toggle lock state
         if (isLocked) {
-            // Trigger refresh or re-fetch if locking again
             console.log('Draft ID is now locked and active:', draftId);
         }
     };
@@ -47,6 +50,10 @@ function Dashboard() {
     const handleDraftIdSubmit = () => {
         console.log('Draft ID submitted:', draftId);
     };
+
+    if (loading) {
+        return <div>Loading...</div>;
+    }
 
     return (
         <div>

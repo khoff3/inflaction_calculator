@@ -11,8 +11,10 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
     const [showNeutral, setShowNeutral] = useState(true);
     const [zoomLevel, setZoomLevel] = useState(1);
     const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(false);
 
     const calculateStrengthsAndNeeds = (data) => {
+        if (!data) return {};
         const positionSpends = { QB: 0, RB: 0, WR: 0, TE: 0, DEF: 0, K: 0 };
         const strengthsAndNeeds = {};
 
@@ -105,7 +107,7 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
         const fetchTeamBreakdown = async () => {
             console.log("Fetching team breakdown for draft ID:", draftId);
     
-            // Bypass cache if the draft is live
+            // Bypass cache if live data is being fetched
             if (!isLive) {
                 const cachedData = localStorage.getItem(`teamData_${draftId}`);
                 const cachedStrengths = localStorage.getItem(`teamStrengths_${draftId}`);
@@ -117,6 +119,14 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                     return;
                 }
             }
+    
+            if (!draftId) {
+                console.warn("Draft ID is missing, skipping fetch.");
+                return;
+            }
+    
+            setLoading(true);
+            setError(null);
     
             try {
                 const response = await apiClient.get(`/team_breakdown?draft_id=${draftId}&is_live=${isLive}`);
@@ -153,13 +163,15 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
             } catch (error) {
                 console.error('Error fetching team breakdown:', error);
                 setError('Failed to load team data. Please try again later.');
+            } finally {
+                setLoading(false);
             }
         };
     
         fetchTeamBreakdown();
     
         if (isLive) {
-            const interval = setInterval(fetchTeamBreakdown, 10000);
+            const interval = setInterval(fetchTeamBreakdown, 10000); // Update every 10 seconds if live
             return () => clearInterval(interval);
         }
     }, [draftId, isLive, draftOrder]);
@@ -172,12 +184,12 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
         setZoomLevel(prevZoom => Math.max(prevZoom - 0.1, 0.5)); // Min zoom level of 0.5x
     };
 
-    if (error) {
-        return <div>{error}</div>;
+    if (loading && !teamData) {
+        return <div>Loading team breakdown...</div>;
     }
 
-    if (!teamData || !teamStrengths) {
-        return <div>Loading team breakdown...</div>;
+    if (error) {
+        return <div>{error}</div>;
     }
 
     const baseColors = {
@@ -257,7 +269,7 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                 </label>
             </div>
             <div className="grid-container" style={{ transform: `scale(${zoomLevel})` }}>
-                {Object.entries(teamData).map(([teamSlot, team]) => {
+                {teamData && Object.entries(teamData).map(([teamSlot, team]) => {
                     const { totalSpend, remainingBudget, starters = [], bench = [] } = team; // Ensure starters and bench are arrays
 
                     return (
@@ -276,10 +288,10 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                                     <div>TE</div>
                                 </div>
                                 <div className="position-emojis">
-                                    <div>{filterStrengthsAndNeeds(teamStrengths[teamSlot]?.QB) ? getStrengthEmoji(teamStrengths[teamSlot]?.QB) : ''}</div>
-                                    <div>{filterStrengthsAndNeeds(teamStrengths[teamSlot]?.RB) ? getStrengthEmoji(teamStrengths[teamSlot]?.RB) : ''}</div>
-                                    <div>{filterStrengthsAndNeeds(teamStrengths[teamSlot]?.WR) ? getStrengthEmoji(teamStrengths[teamSlot]?.WR) : ''}</div>
-                                    <div>{filterStrengthsAndNeeds(teamStrengths[teamSlot]?.TE) ? getStrengthEmoji(teamStrengths[teamSlot]?.TE) : ''}</div>
+                                    <div>{filterStrengthsAndNeeds(teamStrengths?.[teamSlot]?.QB) ? getStrengthEmoji(teamStrengths[teamSlot]?.QB) : ''}</div>
+                                    <div>{filterStrengthsAndNeeds(teamStrengths?.[teamSlot]?.RB) ? getStrengthEmoji(teamStrengths[teamSlot]?.RB) : ''}</div>
+                                    <div>{filterStrengthsAndNeeds(teamStrengths?.[teamSlot]?.WR) ? getStrengthEmoji(teamStrengths[teamSlot]?.WR) : ''}</div>
+                                    <div>{filterStrengthsAndNeeds(teamStrengths?.[teamSlot]?.TE) ? getStrengthEmoji(teamStrengths[teamSlot]?.TE) : ''}</div>
                                 </div>
                             </div>
                             <div className="player-card-container">
