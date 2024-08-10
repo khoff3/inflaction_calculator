@@ -33,3 +33,4 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+frontend/node_modules/.cache/

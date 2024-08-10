@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './style.css';
+import apiClient from './utils/apiClient'; // Adjusted import based on the new path
 
-const TeamBreakdown = ({ draftId, isLive }) => {
+const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
     const [teamData, setTeamData] = useState(null);
     const [teamStrengths, setTeamStrengths] = useState(null);
-    const [maxFontSize, setMaxFontSize] = useState("calc(10px + 0.5vw)");
+    const [showStrengths, setShowStrengths] = useState(true);
+    const [showNeeds, setShowNeeds] = useState(true);
+    const [showNeutral, setShowNeutral] = useState(true);
+    const [zoomLevel, setZoomLevel] = useState(1);
+    const [error, setError] = useState(null);
 
-    // Function to calculate team strengths and needs
     const calculateStrengthsAndNeeds = (data) => {
         const positionSpends = { QB: 0, RB: 0, WR: 0, TE: 0, DEF: 0, K: 0 };
         const strengthsAndNeeds = {};
@@ -15,14 +19,12 @@ const TeamBreakdown = ({ draftId, isLive }) => {
         Object.entries(data).forEach(([teamSlot, team]) => {
             const teamSpends = { ...positionSpends };
 
-            // Calculate spend per position
             team.starters.forEach(player => {
                 if (teamSpends[player.position] !== undefined) {
                     teamSpends[player.position] += player.amount;
                 }
             });
 
-            // Compare against average spends
             const totalTeams = Object.keys(data).length;
             Object.keys(teamSpends).forEach(position => {
                 const avgSpend = Object.values(data).reduce((acc, team) => {
@@ -45,39 +47,134 @@ const TeamBreakdown = ({ draftId, isLive }) => {
         return strengthsAndNeeds;
     };
 
+    const calculateBudgetLeft = (remainingBudget) => {
+        const symbols = Math.ceil(remainingBudget / 40);
+        return '💵'.repeat(symbols > 5 ? 5 : symbols) + '⚠️'.repeat(5 - symbols);
+    };
+
+    const ensureStartingPositions = (starters) => {
+        const positionsNeeded = ['QB', 'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'Flex', 'DEF', 'K'];
+        const fullStarters = positionsNeeded.map(position => {
+            const player = starters.find(player => player.position === position);
+            if (player) {
+                starters = starters.filter(p => p !== player);
+                return player;
+            } else {
+                return { name: '', position, amount: 0 }; // Placeholder for open slot
+            }
+        });
+
+        return fullStarters;
+    };
+
+    const fillBenchSpots = (bench) => {
+        const maxBenchSpots = 6; // Define the number of bench spots
+        const filledBench = bench.slice(0, maxBenchSpots); // Take existing players up to maxBenchSpots
+
+        // Add placeholders for remaining spots
+        while (filledBench.length < maxBenchSpots) {
+            filledBench.push({ name: '', position: 'Bench', amount: 0 }); // Placeholder for open slot
+        }
+
+        return filledBench;
+    };
+
+    useEffect(() => {
+        const adjustLayout = () => {
+            const screenWidth = window.innerWidth;
+            const availableWidth = screenWidth - 40; // Account for padding/margins
+            const columnWidth = availableWidth / 12; // Distribute space evenly across 12 columns
+            const minColumnWidth = 80; // Minimum column width to ensure readability
+            const finalColumnWidth = Math.max(columnWidth, minColumnWidth);
+            const finalFontSize = Math.max(finalColumnWidth / 10, 12); // Adjust font size proportionally, minimum 12px
+        
+            const teamColumns = document.querySelectorAll('.team-column');
+            teamColumns.forEach(column => {
+                column.style.width = `${finalColumnWidth}px`;
+                column.style.fontSize = `${finalFontSize}px`;
+            });
+        };
+    
+        adjustLayout(); // Call initially
+        window.addEventListener('resize', adjustLayout); // Adjust on window resize
+    
+        return () => window.removeEventListener('resize', adjustLayout);
+    }, []);
+    
     useEffect(() => {
         const fetchTeamBreakdown = async () => {
+            console.log("Fetching team breakdown for draft ID:", draftId);
+    
+            // Bypass cache if the draft is live
+            if (!isLive) {
+                const cachedData = localStorage.getItem(`teamData_${draftId}`);
+                const cachedStrengths = localStorage.getItem(`teamStrengths_${draftId}`);
+    
+                if (cachedData && cachedStrengths) {
+                    console.log("Loading cached data for draft ID:", draftId);
+                    setTeamData(JSON.parse(cachedData));
+                    setTeamStrengths(JSON.parse(cachedStrengths));
+                    return;
+                }
+            }
+    
             try {
-                const response = await axios.get(`/team_breakdown?draft_id=${draftId}&is_live=${isLive}`);
-                const data = response.data;
-
-                // Calculate the longest name length
-                const allNames = Object.values(data).flatMap(team =>
-                    team.starters.concat(team.bench).map(player => player.name)
-                );
-                const longestNameLength = Math.max(...allNames.map(name => name.length));
-
-                // Determine the appropriate font size based on the longest name length
-                let calculatedFontSize = `calc(10px + ${longestNameLength > 15 ? 0.4 : 0.5}vw)`;
-                setMaxFontSize(calculatedFontSize);
-
-                // Calculate team strengths and needs
-                const strengthsAndNeeds = calculateStrengthsAndNeeds(data);
+                const response = await apiClient.get(`/team_breakdown?draft_id=${draftId}&is_live=${isLive}`);
+                let data = response.data;
+    
+                // Initialize any missing teams
+                const allTeams = {};
+                for (let i = 1; i <= 12; i++) {
+                    allTeams[i] = data[i] || {
+                        teamName: draftOrder[i - 1] || `Team ${i}`, // Use draftOrder if available
+                        totalSpend: 0,
+                        remainingBudget: 200,
+                        starters: [],
+                        bench: [],
+                    };
+                }
+    
+                const strengthsAndNeeds = calculateStrengthsAndNeeds(allTeams);
                 setTeamStrengths(strengthsAndNeeds);
-
-                setTeamData(data);
+    
+                // Cache data only if not live
+                if (!isLive) {
+                    localStorage.setItem(`teamStrengths_${draftId}`, JSON.stringify(strengthsAndNeeds));
+                    localStorage.setItem(`teamData_${draftId}`, JSON.stringify(allTeams));
+                }
+    
+                Object.values(allTeams).forEach(team => {
+                    team.starters = ensureStartingPositions(team.starters);
+                    team.bench = fillBenchSpots(team.bench);
+                });
+    
+                setTeamData(allTeams);
+                console.log("Team breakdown loaded successfully:", allTeams);
             } catch (error) {
                 console.error('Error fetching team breakdown:', error);
+                setError('Failed to load team data. Please try again later.');
             }
         };
-
+    
         fetchTeamBreakdown();
-
+    
         if (isLive) {
             const interval = setInterval(fetchTeamBreakdown, 10000);
             return () => clearInterval(interval);
         }
-    }, [draftId, isLive]);
+    }, [draftId, isLive, draftOrder]);
+
+    const handleZoomIn = () => {
+        setZoomLevel(prevZoom => Math.min(prevZoom + 0.1, 2)); // Max zoom level of 2x
+    };
+
+    const handleZoomOut = () => {
+        setZoomLevel(prevZoom => Math.max(prevZoom - 0.1, 0.5)); // Min zoom level of 0.5x
+    };
+
+    if (error) {
+        return <div>{error}</div>;
+    }
 
     if (!teamData || !teamStrengths) {
         return <div>Loading team breakdown...</div>;
@@ -96,19 +193,19 @@ const TeamBreakdown = ({ draftId, isLive }) => {
         const usePound = color[0] === "#";
         let num = parseInt(color.slice(1), 16);
 
-        let r = (num >> 16) + amount;
+        let r = ((num >> 16) + amount);
         if (r > 255) r = 255;
         else if (r < 0) r = 0;
 
-        let g = ((num >> 8) & 0x00FF) + amount;
+        let g = (((num >> 8) & 0x00FF) + amount);
         if (g > 255) g = 255;
         else if (g < 0) g = 0;
 
-        let b = (num & 0x0000FF) + amount;
+        let b = ((num & 0x0000FF) + amount);
         if (b > 255) b = 255;
         else if (b < 0) b = 0;
 
-        return (usePound ? "#" : "") + (r << 16 | g << 8 | b).toString(16).padStart(6, '0');
+        return (usePound ? "#" : "") + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
     };
 
     const getColorByPositionAndSpend = (position, amount) => {
@@ -125,77 +222,101 @@ const TeamBreakdown = ({ draftId, isLive }) => {
         return adjustColorBrightness(baseColor, brightnessAdjustment);
     };
 
-    // Get color based on strength/need status
-    const getStrengthColor = (status) => {
-        if (status === "Strength") return "#32CD32"; // Green
-        if (status === "Need") return "#FF6347"; // Red
-        return "#FFD700"; // Yellow for Neutral
+    const getStrengthEmoji = (status) => {
+        if (status === "Strength") return "🟢";
+        if (status === "Need") return "⭕";
+        return "🚧";
+    };
+
+    const filterStrengthsAndNeeds = (status) => {
+        if (status === "Strength" && showStrengths) return true;
+        if (status === "Need" && showNeeds) return true;
+        if (status === "Neutral" && showNeutral) return true;
+        return false;
     };
 
     return (
-        <div>
+        <div className="team-breakdown-container">
             <h2>Team Breakdown</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '10px' }}>
+            <div className="zoom-controls">
+                <button className="zoom-out" onClick={handleZoomOut}>-</button>
+                <button className="zoom-in" onClick={handleZoomIn}>+</button>
+            </div>
+            <div className="checkbox-container">
+                <label>
+                    <input type="checkbox" checked={showStrengths} onChange={(e) => setShowStrengths(e.target.checked)} />
+                    Show Strengths
+                </label>
+                <label>
+                    <input type="checkbox" checked={showNeeds} onChange={(e) => setShowNeeds(e.target.checked)} />
+                    Show Needs
+                </label>
+                <label>
+                    <input type="checkbox" checked={showNeutral} onChange={(e) => setShowNeutral(e.target.checked)} />
+                    Show Neutral
+                </label>
+            </div>
+            <div className="grid-container" style={{ transform: `scale(${zoomLevel})` }}>
                 {Object.entries(teamData).map(([teamSlot, team]) => {
-                    const { totalSpend, remainingBudget, starters, bench } = team;
+                    const { totalSpend, remainingBudget, starters = [], bench = [] } = team; // Ensure starters and bench are arrays
 
                     return (
                         <div key={teamSlot} className="team-column">
-                            <h3 className="team-header">Team {teamSlot}</h3>
-                            <div><strong>Total Spend: ${totalSpend}</strong></div>
-                            <div><strong>Remaining Budget: ${remainingBudget}</strong></div>
-                            <div>
-                                <>Needs:</>
-                                <div>
-                                    {Object.entries(teamStrengths[teamSlot]).map(([position, status]) => (
-                                        <div 
-                                            key={position} 
-                                            style={{ color: getStrengthColor(status), fontWeight: 'bold' }}
-                                        >
-                                            {position}: {status}
-                                        </div>
-                                    ))}
+                            <h3 className="team-header">{team.teamName || `Team ${teamSlot}`}</h3>
+                            <div className="team-stats">
+                                <div className="money"><strong>Spend:</strong> ${totalSpend}</div>
+                                <div className="money"><strong>Budget:</strong> ${remainingBudget}</div>
+                                <div className="money">{calculateBudgetLeft(remainingBudget)}</div>
+                            </div>
+                            <div className="position-grid">
+                                <div className="position-labels">
+                                    <div>QB</div>
+                                    <div>RB</div>
+                                    <div>WR</div>
+                                    <div>TE</div>
+                                </div>
+                                <div className="position-emojis">
+                                    <div>{filterStrengthsAndNeeds(teamStrengths[teamSlot]?.QB) ? getStrengthEmoji(teamStrengths[teamSlot]?.QB) : ''}</div>
+                                    <div>{filterStrengthsAndNeeds(teamStrengths[teamSlot]?.RB) ? getStrengthEmoji(teamStrengths[teamSlot]?.RB) : ''}</div>
+                                    <div>{filterStrengthsAndNeeds(teamStrengths[teamSlot]?.WR) ? getStrengthEmoji(teamStrengths[teamSlot]?.WR) : ''}</div>
+                                    <div>{filterStrengthsAndNeeds(teamStrengths[teamSlot]?.TE) ? getStrengthEmoji(teamStrengths[teamSlot]?.TE) : ''}</div>
                                 </div>
                             </div>
-                            <div style={{ display: 'grid', gridTemplateRows: 'repeat(16, 1fr)', gap: '5px' }}>
+                            <div className="player-card-container">
                                 {starters.map((player, index) => {
-                                    const backgroundColor = getColorByPositionAndSpend(player.position, player.amount);
+                                    const backgroundColor = player?.name ? getColorByPositionAndSpend(player.position, player.amount) : 'transparent'; // Transparent for empty slots
 
                                     return (
                                         <div 
                                             key={index} 
                                             className="player-card"
-                                            style={{ backgroundColor, fontSize: maxFontSize }}
+                                            style={{ backgroundColor }}
                                         >
-                                            <div style={{ 
-                                                overflow: 'hidden', 
-                                                textOverflow: 'ellipsis', 
-                                                whiteSpace: 'nowrap' 
-                                            }}>
-                                                {player.name}
+                                            <div className="player-name">
+                                                {player?.name || 'Open Slot'} {/* Display 'Open Slot' for null names */}
                                             </div>
-                                            <div>${player.amount}</div>
+                                            <div className="player-amount">
+                                                {player?.name ? `$${player.amount}` : ''}
+                                            </div>
                                         </div>
                                     );
                                 })}
                                 <div className="bench-header">Bench</div>
                                 {bench.map((player, index) => {
-                                    const backgroundColor = getColorByPositionAndSpend(player.position, player.amount);
+                                    const backgroundColor = player?.name ? getColorByPositionAndSpend(player.position, player.amount) : 'transparent'; // Transparent for empty slots
 
                                     return (
                                         <div 
                                             key={index} 
                                             className="player-card"
-                                            style={{ backgroundColor, fontSize: maxFontSize }}
+                                            style={{ backgroundColor }}
                                         >
-                                            <div style={{ 
-                                                overflow: 'hidden', 
-                                                textOverflow: 'ellipsis', 
-                                                whiteSpace: 'nowrap' 
-                                            }}>
-                                                {player.name}
+                                            <div className="player-name">
+                                                {player?.name || 'Open Slot'}
                                             </div>
-                                            <div>${player.amount}</div>
+                                            <div className="player-amount">
+                                                {player?.name ? `$${player.amount}` : ''}
+                                            </div>
                                         </div>
                                     );
                                 })}

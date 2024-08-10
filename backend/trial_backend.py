@@ -275,6 +275,7 @@ def calculate_r2_by_position(draft_data):
 
 def calculate_doe_values(draft_data, expected_values, positional_tier_inflation):
     doe_values = {}
+    player_counts = {}
 
     for player in draft_data:
         player_name = f"{player['metadata']['first_name']} {player['metadata']['last_name']}"
@@ -298,13 +299,23 @@ def calculate_doe_values(draft_data, expected_values, positional_tier_inflation)
 
         if player_position not in doe_values:
             doe_values[player_position] = {}
+            player_counts[player_position] = {}
 
         if tier is not None:
             if tier not in doe_values[player_position]:
                 doe_values[player_position][tier] = 0
+                player_counts[player_position][tier] = 0
             doe_values[player_position][tier] += doe
+            player_counts[player_position][tier] += 1
+
+    # Convert to average DOE
+    for position in doe_values:
+        for tier in doe_values[position]:
+            if player_counts[position][tier] > 0:
+                doe_values[position][tier] /= player_counts[position][tier]
 
     return doe_values
+
 
 def calculate_avg_tier_costs(expected_values):
     avg_tier_costs = {}

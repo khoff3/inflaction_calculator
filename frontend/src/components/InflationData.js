@@ -1,6 +1,104 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, memo } from 'react';
 import axios from 'axios';
 import { Table, Alert, Spinner } from 'react-bootstrap';
+import './inflation.css';
+
+const MemoizedHeader = memo(() => (
+    <div>
+        <h2>Overall Inflation</h2>
+    </div>
+));
+
+const InflationTable = memo(({ inflationData, getColorClass }) => (
+  <div>
+      {/* Overall Inflation */}
+      <div className="mb-4">
+          <MemoizedHeader />
+          <p
+              id="overall-inflation-display"
+              className="inflation-percentage"
+          >
+              Overall Inflation: {(inflationData.overall_inflation * 100).toFixed(1)}%
+          </p>
+      </div>
+
+      {/* Positional Inflation */}
+      {inflationData.positional_inflation && (
+          <div className="positional-inflation">
+              <h2>Positional Inflation</h2>
+              <Table bordered hover className="centered-table">
+                  <thead>
+                      <tr>
+                          <th>Position</th>
+                          <th>Inflation (%)</th>
+                          <th>Number of Picks</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      {Object.keys(inflationData.positional_inflation).map((position) => (
+                          <tr key={position}>
+                              <td>{position}</td>
+                              <td className={getColorClass(inflationData.positional_inflation[position])}>
+                                  {inflationData.positional_inflation[position] !== 'N/A'
+                                      ? `${(inflationData.positional_inflation[position] * 100).toFixed(1)}%`
+                                      : 'N/A'}
+                              </td>
+                              <td>{inflationData.total_picks?.[position] || '0'}</td>
+                          </tr>
+                      ))}
+                  </tbody>
+              </Table>
+          </div>
+      )}
+
+      {/* Tiered Inflation */}
+      {inflationData.tiered_inflation && (
+          <div className="tiered-inflation">
+              {["QB", "RB", "WR", "TE"].map((position) => (
+                  <div key={position} className="tiered-position">
+                      <h3>{position.toUpperCase()}</h3>
+                      <Table bordered hover className="centered-table">
+                          <thead>
+                              <tr>
+                                  <th>Tier</th>
+                                  <th>Inflation (%)</th>
+                                  <th>Picks</th>
+                                  <th>DOE ($)</th>
+                                  <th>Avg Cost ($)</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {Object.keys(inflationData.tiered_inflation[position]).map((tier) => (
+                                  <tr key={tier}>
+                                      <td>{tier}</td>
+                                      <td
+                                          id={`${position}-${tier}-inflation`}
+                                          className={getColorClass(inflationData.tiered_inflation[position]?.[tier])}
+                                      >
+                                          {(inflationData.tiered_inflation[position]?.[tier] * 100).toFixed(1)}%
+                                      </td>
+                                      <td id={`${position}-${tier}-picks`}>
+                                          {inflationData.picks_per_tier?.[position]?.[tier] || '0'}
+                                      </td>
+                                      <td
+                                          id={`${position}-${tier}-doe`}
+                                          className={getColorClass(inflationData.doe_values?.[position]?.[tier] || 0)}
+                                      >
+                                          ${parseFloat(inflationData.doe_values?.[position]?.[tier] || 0).toFixed(2)}
+                                      </td>
+                                      <td id={`${position}-${tier}-avg_cost`}>
+                                          ${parseFloat(inflationData.avg_tier_costs?.[position]?.[tier] || 0).toFixed(2)}
+                                      </td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </Table>
+                  </div>
+              ))}
+          </div>
+      )}
+  </div>
+));
 
 function InflationData({ draftId, isLive }) {
     const [inflationData, setInflationData] = useState(null);
@@ -9,26 +107,43 @@ function InflationData({ draftId, isLive }) {
 
     useEffect(() => {
         const fetchInflationData = async () => {
+            console.log("Fetching inflation data for draft ID:", draftId);
+    
+            // Bypass cache if live data is being fetched
+            if (!isLive) {
+                const cachedData = localStorage.getItem(`inflationData_${draftId}`);
+                if (cachedData) {
+                    console.log("Loading cached inflation data for draft ID:", draftId);
+                    setInflationData(JSON.parse(cachedData));
+                    return;
+                }
+            }
+    
             if (!draftId) {
                 console.warn("Draft ID is missing, skipping fetch.");
                 return;
             }
-
+    
             setLoading(true);
             setError(null);
-
+    
             try {
                 const formData = new FormData();
                 formData.append('draft_id', draftId);
-
+    
                 const response = await axios.post('/inflation', formData, {
                     headers: {
                         'Content-Type': 'multipart/form-data',
                     },
                 });
-
+    
                 if (response.data) {
                     setInflationData(response.data);
+                    // Cache data only if not live
+                    if (!isLive) {
+                        localStorage.setItem(`inflationData_${draftId}`, JSON.stringify(response.data)); 
+                    }
+                    console.log("Inflation data loaded successfully:", response.data);
                 } else {
                     setError('No data found');
                 }
@@ -39,14 +154,15 @@ function InflationData({ draftId, isLive }) {
                 setLoading(false);
             }
         };
-
+    
         fetchInflationData();
-
+    
         if (isLive) {
-            const interval = setInterval(fetchInflationData, 10000);
+            const interval = setInterval(fetchInflationData, 10000); // Update every 10 seconds if live
             return () => clearInterval(interval);
         }
     }, [draftId, isLive]);
+    
 
     const getColorClass = (value) => {
         if (value > 0.15) return 'severe-positive';
@@ -63,7 +179,11 @@ function InflationData({ draftId, isLive }) {
     }
 
     if (error) {
-        return <Alert variant="danger">{error}</Alert>;
+        return (
+            <Alert variant="danger">
+                {error} <button onClick={() => window.location.reload()}>Retry</button>
+            </Alert>
+        );
     }
 
     if (!inflationData) {
@@ -72,89 +192,7 @@ function InflationData({ draftId, isLive }) {
 
     return (
         <div>
-            {/* Overall Inflation */}
-            <div>
-                <h2>Overall Inflation</h2>
-                <p id="overall-inflation-display" className={getColorClass(inflationData.overall_inflation)}>
-                    Overall Inflation: {(inflationData.overall_inflation * 100).toFixed(2)}%
-                </p>
-            </div>
-
-            {/* Positional Inflation */}
-            {inflationData.positional_inflation && (
-                <div>
-                    <h2>Positional Inflation</h2>
-                    <Table>
-                        <thead>
-                            <tr>
-                                <th>Position</th>
-                                <th>Inflation (%)</th>
-                                <th>Number of Picks</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {Object.keys(inflationData.positional_inflation).map((position) => (
-                                <tr key={position}>
-                                    <td>{position}</td>
-                                    <td className={getColorClass(inflationData.positional_inflation[position])}>
-                                        {inflationData.positional_inflation[position] !== 'N/A'
-                                            ? `${(inflationData.positional_inflation[position] * 100).toFixed(2)}%`
-                                            : 'N/A'}
-                                    </td>
-                                    <td>{inflationData.total_picks?.[position] || '0'}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </Table>
-                </div>
-            )}
-
-            {/* Tiered Inflation */}
-            {inflationData.tiered_inflation && (
-                <div className="tiered-inflation">
-                    {Object.keys(inflationData.tiered_inflation).map((position) => (
-                        <div key={position}>
-                            <h3>{position.toUpperCase()}</h3>
-                            <Table>
-                                <thead>
-                                    <tr>
-                                        <th>Tier</th>
-                                        <th>Inflation (%)</th>
-                                        <th>Picks</th>
-                                        <th>DOE ($)</th>
-                                        <th>Avg Cost ($)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {Object.keys(inflationData.tiered_inflation[position]).map((tier) => (
-                                        <tr key={tier}>
-                                            <td>{tier}</td>
-                                            <td
-                                                id={`${position}-${tier}-inflation`}
-                                                className={getColorClass(inflationData.tiered_inflation[position]?.[tier])}
-                                            >
-                                                {(inflationData.tiered_inflation[position]?.[tier] * 100).toFixed(2)}%
-                                            </td>
-                                            <td id={`${position}-${tier}-picks`}>
-                                                {inflationData.picks_per_tier?.[position]?.[tier] || '0'}
-                                            </td>
-                                            <td
-                                                id={`${position}-${tier}-doe`}
-                                                className={getColorClass(inflationData.doe_values?.[position]?.[tier] || 0)}
-                                            >
-                                                ${parseFloat(inflationData.doe_values?.[position]?.[tier] || 0).toFixed(2)}
-                                            </td>
-                                            <td id={`${position}-${tier}-avg_cost`}>
-                                                ${parseFloat(inflationData.avg_tier_costs?.[position]?.[tier] || 0).toFixed(2)}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </Table>
-                        </div>
-                    ))}
-                </div>
-            )}
+            <InflationTable inflationData={inflationData} getColorClass={getColorClass} />
         </div>
     );
 }

@@ -1,0 +1,88 @@
+/* General Layout Adjustments */
+.mb-4 {
+    margin-bottom: 16px !important; /* Reduce space between sections */
+}
+
+.tiered-inflation {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* Reduced min card size to 200px */
+    gap: 8px; /* Reduce gap between the tiered position cards */
+    margin-top: 24px; /* Reduce space between positional inflation and tiered inflation */
+}
+
+.tiered-position {
+    background-color: #f9f9f9;
+    padding: 16px; /* Reduce padding */
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+.tiered-position h3 {
+    margin-top: -8px; /* Slightly reduce the top margin */
+    margin-bottom: 0px;
+    font-size: 1.4rem; /* Reduce heading size slightly */
+}
+
+.centered-table {
+    width: 100%;
+    font-size: 1rem; /* Decrease font size for table content */
+    text-align: center;
+    color: #000; /* Make text black */
+}
+
+.centered-table td, .centered-table th {
+    padding: 6px; /* Slightly reduce padding to maintain spacing */
+    vertical-align: middle; /* Vertically center the text */
+}
+
+/* Adjusting Overall Inflation Text Size */
+.inflation-percentage {
+    font-size: 1.2rem; /* Maintain overall inflation text size */
+}
+
+/* Inflation Colors */
+.severe-positive {
+    background-color: #ff4d4d; /* Dark Red */
+    color: #000;
+}
+
+.moderate-positive {
+    background-color: #ff9999; /* Light Red */
+    color: #000;
+}
+
+.mild-positive {
+    background-color: #ffcccc; /* Very Light Red */
+    color: #000;
+}
+
+.severe-negative {
+    background-color: #4dff4d; /* Dark Green */
+    color: #000;
+}
+
+.moderate-negative {
+    background-color: #99ff99; /* Light Green */
+    color: #000;
+}
+
+.mild-negative {
+    background-color: #ccffcc; /* Very Light Green */
+    color: #000;
+}
+
+.neutral {
+    background-color: transparent; /* Transparent background */
+    color: #000;
+}
+
+/* Remove checkered pattern */
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: transparent; /* No background color for odd rows */
+}
+

@@ -1,3 +1,59 @@
+/* Team Breakdown Container */
+.team-breakdown-container {
+    width: 100%;
+    padding: 10px;
+    overflow-x: auto; /* Enable horizontal scrolling if content overflows */
+    white-space: nowrap;
+    display: flex;
+    flex-direction: column; /* Stack children vertically */
+}
+
+/* Zoom Controls */
+.zoom-controls {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px; /* Space below the zoom controls */
+}
+
+/* Zoom Buttons */
+.zoom-controls button {
+    padding: 5px 10px;
+    margin: 0 10px;
+    cursor: pointer;
+    font-size: 1.2em;
+}
+
+/* Team Columns Container */
+.grid-container {
+    display: inline-flex; /* Inline-flex to prevent wrapping */
+    gap: 10px;
+    justify-items: center; /* Center each grid item horizontally */
+    transform: scale(1); /* Default scale */
+    transform-origin: top left;
+    transition: transform 0.3s ease-in-out;
+}
+
+/* Team Column Styles */
+.team-column {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+    text-align: center;
+    box-sizing: border-box;
+    display: flex; /* Use flex to allow vertical stacking within columns */
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+    width: 150px; /* Set a fixed width to standardize column size */
+    transition: width 0.3s, font-size 0.3s;
+}
+
+.zoom-out, .zoom-in {
+    font-size: 1.2em;
+}
+
+/* General Tab Styles */
 .tab {
     display: flex;
     gap: 10px;
@@ -15,45 +71,170 @@
 .tablinks:hover, .tablinks.active {
     background-color: #ddd;
     border-bottom: 2px solid #000;
-}.team-column {
-    border: 1px solid #ccc;
-    padding: 10px;
-    background-color: transparent; 
-    text-align: center; 
-    width: 100%; 
-}.team-column {
-    border: 1px solid #ccc;
-    padding: 10px;
-    background-color: transparent; 
-    text-align: center; 
-    width: 100%; 
 }
 
+/* Team Header Styles */
+.team-header {
+    font-size: 1em;
+    margin-bottom: 8px;
+    color: #333;
+    font-weight: bold;
+}
+
+/* Team Stats Styles */
+.team-stats {
+    margin-bottom: 10px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.team-stat {
+    font-size: 1em;
+    font-weight: bold;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.money {
+    font-size: 1.1em;
+    text-align: center;
+}
+
+/* Position Grid Styles */
+.position-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+    justify-content: center;
+}
+
+.position-labels, .position-emojis {
+    display: grid;
+    grid-template-rows: repeat(4, minmax(40px, 1fr));
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.position-labels div, .position-emojis div {
+    padding: 5px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+}
+
+/* Player Card Styles */
+.player-card-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    width: 100%;
+}
+
+/* Style for Player Cards */
 .player-card {
-    padding: 10px;
-    border-radius: 4px;
-    color: #fff; 
+    padding: 8px;
+    border-radius: 5px;
+    text-align: center;
+    color: #fff;
     margin-bottom: 10px;
     font-weight: bold;
-    width: 100%;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    height: 60px; /* Ensure uniform height */
+    height: 60px;
     box-sizing: border-box;
-    font-size: calc(10px + 0.5vw); /* Adjust this based on the largest name */
+    font-size: 14px;
 }
 
-.team-column {
-    background-color: transparent;
+.player-name {
+    font-size: 1em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
 }
 
-.bench-header {
-    margin-top: 10px;
-    font-weight: bold;
-    color: #000;
+.player-amount {
+    font-size: 0.9em;
+    margin-top: 5px;
+}
+
+/* Draft Board Container with Zoom */
+.grid-container {
+    display: inline-flex; /* Inline-flex to prevent wrapping */
+    gap: 10px;
+    justify-items: center; /* Center each grid item horizontally */
+    transform: scale(1); /* Default scale */
+    transform-origin: top left;
+    transition: transform 0.3s ease-in-out;
+}
+
+/* Media Queries for Responsive Design */
+@media (max-width: 1200px) {
+    .team-column {
+        width: 140px;
+    }
+
+    .player-card {
+        font-size: 13px;
+    }
+
+    .position-labels div, .position-emojis div {
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 992px) {
+    .team-column {
+        width: 130px;
+    }
+
+    .player-card {
+        font-size: 12px;
+    }
+
+    .position-labels div, .position-emojis div {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 768px) {
+    .team-column {
+        width: 120px;
+    }
+
+    .player-card {
+        font-size: 11px;
+    }
+
+    .position-labels div, .position-emojis div {
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 576px) {
+    .team-column {
+        width: 110px;
+    }
+
+    .player-card {
+        font-size: 10px;
+    }
+
+    .position-labels div, .position-emojis div {
+        font-size: 9px;
+    }
 }
