@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import './style.css';
-import apiClient from './utils/apiClient'; // Adjusted import based on the new path
+import apiClient from './utils/apiClient';
 
 const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
     const [teamData, setTeamData] = useState(null);
@@ -70,55 +69,24 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
     };
 
     const fillBenchSpots = (bench) => {
-        const maxBenchSpots = 6; // Define the number of bench spots
-        const filledBench = bench.slice(0, maxBenchSpots); // Take existing players up to maxBenchSpots
+        const maxBenchSpots = 6; 
+        const filledBench = bench.slice(0, maxBenchSpots); 
 
-        // Add placeholders for remaining spots
         while (filledBench.length < maxBenchSpots) {
-            filledBench.push({ name: '', position: 'Bench', amount: 0 }); // Placeholder for open slot
+            filledBench.push({ name: '', position: 'Bench', amount: 0 }); 
         }
 
         return filledBench;
     };
-
-    useEffect(() => {
-        const adjustLayout = () => {
-            const screenWidth = window.innerWidth;
-            const availableWidth = screenWidth - 40; // Account for padding/margins
-            const columnWidth = availableWidth / 12; // Distribute space evenly across 12 columns
-            const minColumnWidth = 80; // Minimum column width to ensure readability
-            const finalColumnWidth = Math.max(columnWidth, minColumnWidth);
-            const finalFontSize = Math.max(finalColumnWidth / 10, 12); // Adjust font size proportionally, minimum 12px
-        
-            const teamColumns = document.querySelectorAll('.team-column');
-            teamColumns.forEach(column => {
-                column.style.width = `${finalColumnWidth}px`;
-                column.style.fontSize = `${finalFontSize}px`;
-            });
-        };
-    
-        adjustLayout(); // Call initially
-        window.addEventListener('resize', adjustLayout); // Adjust on window resize
-    
-        return () => window.removeEventListener('resize', adjustLayout);
-    }, []);
-    
     useEffect(() => {
         const fetchTeamBreakdown = async () => {
-            console.log("Fetching team breakdown for draft ID:", draftId);
-    
-            // Bypass cache if live data is being fetched
-            if (!isLive) {
-                const cachedData = localStorage.getItem(`teamData_${draftId}`);
-                const cachedStrengths = localStorage.getItem(`teamStrengths_${draftId}`);
-    
-                if (cachedData && cachedStrengths) {
-                    console.log("Loading cached data for draft ID:", draftId);
-                    setTeamData(JSON.parse(cachedData));
-                    setTeamStrengths(JSON.parse(cachedStrengths));
-                    return;
-                }
+            if (draftOrder.length !== 12 || draftOrder.includes('')) {
+                console.warn("Draft order is not fully populated, skipping fetch.");
+                return;
             }
+    
+            console.log("Fetching team breakdown for draft ID:", draftId);
+            console.log("Using draft order:", draftOrder);
     
             if (!draftId) {
                 console.warn("Draft ID is missing, skipping fetch.");
@@ -129,25 +97,26 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
             setError(null);
     
             try {
+                // Force an API call if live mode is enabled
                 const response = await apiClient.get(`/team_breakdown?draft_id=${draftId}&is_live=${isLive}`);
-                let data = response.data;
+                const data = response.data;  // Use the data from the response
     
-                // Initialize any missing teams
                 const allTeams = {};
                 for (let i = 1; i <= 12; i++) {
-                    allTeams[i] = data[i] || {
-                        teamName: draftOrder[i - 1] || `Team ${i}`, // Use draftOrder if available
-                        totalSpend: 0,
-                        remainingBudget: 200,
-                        starters: [],
-                        bench: [],
+                    allTeams[i] = {
+                        teamName: draftOrder[i - 1] || `Team ${i}`,
+                        totalSpend: data[i]?.totalSpend || 0,
+                        remainingBudget: data[i]?.remainingBudget || 200,
+                        starters: data[i]?.starters || [],
+                        bench: data[i]?.bench || [],
                     };
                 }
+    
+                console.log("Final team assignments with names:", allTeams);
     
                 const strengthsAndNeeds = calculateStrengthsAndNeeds(allTeams);
                 setTeamStrengths(strengthsAndNeeds);
     
-                // Cache data only if not live
                 if (!isLive) {
                     localStorage.setItem(`teamStrengths_${draftId}`, JSON.stringify(strengthsAndNeeds));
                     localStorage.setItem(`teamData_${draftId}`, JSON.stringify(allTeams));
@@ -175,13 +144,14 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
             return () => clearInterval(interval);
         }
     }, [draftId, isLive, draftOrder]);
-
+    
+    
     const handleZoomIn = () => {
-        setZoomLevel(prevZoom => Math.min(prevZoom + 0.1, 2)); // Max zoom level of 2x
+        setZoomLevel(prevZoom => Math.min(prevZoom + 0.1, 2)); 
     };
 
     const handleZoomOut = () => {
-        setZoomLevel(prevZoom => Math.max(prevZoom - 0.1, 0.5)); // Min zoom level of 0.5x
+        setZoomLevel(prevZoom => Math.max(prevZoom - 0.1, 0.5)); 
     };
 
     if (loading && !teamData) {
@@ -270,11 +240,16 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
             </div>
             <div className="grid-container" style={{ transform: `scale(${zoomLevel})` }}>
                 {teamData && Object.entries(teamData).map(([teamSlot, team]) => {
-                    const { totalSpend, remainingBudget, starters = [], bench = [] } = team; // Ensure starters and bench are arrays
+                    if (!team) {
+                        console.warn(`Team data missing for slot ${teamSlot}`);
+                        return null;
+                    }
+
+                    const { teamName, totalSpend, remainingBudget, starters = [], bench = [] } = team;
 
                     return (
                         <div key={teamSlot} className="team-column">
-                            <h3 className="team-header">{team.teamName || `Team ${teamSlot}`}</h3>
+                            <h3 className="team-header">{teamName || `Team ${teamSlot}`}</h3>
                             <div className="team-stats">
                                 <div className="money"><strong>Spend:</strong> ${totalSpend}</div>
                                 <div className="money"><strong>Budget:</strong> ${remainingBudget}</div>
@@ -296,7 +271,7 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                             </div>
                             <div className="player-card-container">
                                 {starters.map((player, index) => {
-                                    const backgroundColor = player?.name ? getColorByPositionAndSpend(player.position, player.amount) : 'transparent'; // Transparent for empty slots
+                                    const backgroundColor = player?.name ? getColorByPositionAndSpend(player.position, player.amount) : 'transparent';
 
                                     return (
                                         <div 
@@ -305,7 +280,7 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                                             style={{ backgroundColor }}
                                         >
                                             <div className="player-name">
-                                                {player?.name || 'Open Slot'} {/* Display 'Open Slot' for null names */}
+                                                {player?.name || ' '}
                                             </div>
                                             <div className="player-amount">
                                                 {player?.name ? `$${player.amount}` : ''}
@@ -315,7 +290,7 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                                 })}
                                 <div className="bench-header">Bench</div>
                                 {bench.map((player, index) => {
-                                    const backgroundColor = player?.name ? getColorByPositionAndSpend(player.position, player.amount) : 'transparent'; // Transparent for empty slots
+                                    const backgroundColor = player?.name ? getColorByPositionAndSpend(player.position, player.amount) : 'transparent';
 
                                     return (
                                         <div 
@@ -324,7 +299,7 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                                             style={{ backgroundColor }}
                                         >
                                             <div className="player-name">
-                                                {player?.name || 'Open Slot'}
+                                                {player?.name || ' '}
                                             </div>
                                             <div className="player-amount">
                                                 {player?.name ? `$${player.amount}` : ''}
@@ -338,7 +313,7 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                 })}
             </div>
         </div>
-    );
+    );    
 };
 
 export default TeamBreakdown;

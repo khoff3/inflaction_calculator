@@ -109,6 +109,7 @@ function InflationData({ draftId, isLive }) {
         const fetchInflationData = async () => {
             console.log("Fetching inflation data for draft ID:", draftId);
     
+            // Bypass cache if live data is being fetched
             if (!isLive) {
                 const cachedData = localStorage.getItem(`inflationData_${draftId}`);
                 if (cachedData) {
@@ -127,17 +128,15 @@ function InflationData({ draftId, isLive }) {
             setError(null);
     
             try {
-                const formData = new FormData();
-                formData.append('draft_id', draftId);
-    
-                const response = await axios.post('/inflation', formData, {
+                const response = await axios.post('/inflation', { draft_id: draftId }, {
                     headers: {
-                        'Content-Type': 'multipart/form-data',
+                        'Content-Type': 'application/json',
                     },
                 });
     
                 if (response.data) {
                     setInflationData(response.data);
+                    // Cache data only if not live
                     if (!isLive) {
                         localStorage.setItem(`inflationData_${draftId}`, JSON.stringify(response.data)); 
                     }
@@ -160,7 +159,6 @@ function InflationData({ draftId, isLive }) {
             return () => clearInterval(interval);
         }
     }, [draftId, isLive]);
-    
 
     const getColorClass = (value) => {
         if (value > 0.15) return 'severe-positive';
@@ -172,7 +170,7 @@ function InflationData({ draftId, isLive }) {
         return 'neutral';
     };
 
-    if (!inflationData && loading) {
+    if (loading) {
         return <Spinner animation="border" />;
     }
 

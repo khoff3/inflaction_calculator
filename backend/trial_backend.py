@@ -502,10 +502,24 @@ def scatter_data():
     logging.debug(f"Scatter data response: {response_data}")
     return jsonify(response_data)
 
+@app.route('/picks', methods=['GET'])
+def get_picks():
+    draft_id = request.args.get('draft_id')
+    if not draft_id:
+        return jsonify({"error": "Draft ID is required"}), 400
+
+    draft_data = get_draft_data(draft_id)
+    if not draft_data:
+        return jsonify({"error": "No draft data found"}), 404
+
+    return jsonify(draft_data)
+
+
 @app.route('/inflation', methods=['GET', 'POST'])
 def get_inflation_rate():
     if request.method == 'POST':
-        draft_id = request.form.get('draft_id')
+        data = request.get_json()  # This will parse the incoming JSON data
+        draft_id = data.get('draft_id')  # Extract 'draft_id' from JSON
     elif request.method == 'GET':
         draft_id = request.args.get('draft_id')
 
@@ -520,16 +534,14 @@ def get_inflation_rate():
         # Calculate inflation rates and expected values
         inflation_rates, expected_values = calculate_inflation_rates(draft_data)
 
-        # Calculate average tier costs
-        if 'Tier' not in expected_values.columns:
-            logging.warning("The 'Tier' column is missing from expected values data.")
-            avg_tier_costs = {}  # Handle missing 'Tier' column case
-        else:
-            avg_tier_costs = calculate_avg_tier_costs(expected_values)
-
-        # Calculate picks per tier and total picks
+        # Calculate picks per tier
         picks_per_tier = get_picks_per_tier(draft_data, expected_values)
+        
+        # Calculate total picks per position
         total_picks = {pos: sum(tier_counts.values()) for pos, tier_counts in picks_per_tier.items()}
+
+        # Calculate average tier costs
+        avg_tier_costs = calculate_avg_tier_costs(expected_values)
 
         # Calculate DOE values
         doe_values = calculate_doe_values(draft_data, expected_values, inflation_rates.get('positional_tiered', {}))

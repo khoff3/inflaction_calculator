@@ -1,0 +1,34 @@
+.ticker-container {
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    padding: 10px;
+}
+
+.ticker {
+    display: flex;
+    flex-wrap: nowrap;
+}
+
+.ticker-card {
+    display: inline-block;
+    width: 250px;
+    padding: 10px;
+    margin-right: 10px;
+    background-color: #fff;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: 5px;
+}
+
+.ticker-card-header {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.ticker-card-body {
+    font-size: 14px;
+    line-height: 1.6;
+}

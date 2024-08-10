@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import ScatterPlot from './ScatterPlot';
 import InflationData from './InflationData';
 import TeamBreakdown from './TeamBreakdown';
+import Ticker from './Ticker';
+import axios from 'axios'; // Add this import
 
 function Dashboard() {
     const draftIdFromUrl = new URLSearchParams(window.location.search).get('draft_id');
@@ -12,6 +14,7 @@ function Dashboard() {
     const [isLive, setIsLive] = useState(isLiveFromUrl); // Track whether the draft is live or not
     const [draftOrder, setDraftOrder] = useState(''); // State to hold draft order input
     const [parsedDraftOrder, setParsedDraftOrder] = useState([]); // Holds the parsed array of names
+    const [picks, setPicks] = useState([]); // State to hold fetched picks
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -21,6 +24,20 @@ function Dashboard() {
         params.set('is_live', isLive);
         window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
     }, [draftId, isLive]);
+
+    useEffect(() => {
+        if (draftId) {
+            const fetchPicks = async () => {
+                try {
+                    const response = await axios.get(`http://localhost:5050/picks?draft_id=${draftId}`);
+                    setPicks(response.data);
+                } catch (error) {
+                    console.error("Failed to fetch picks data:", error);
+                }
+            };
+            fetchPicks();
+        }
+    }, [draftId]); // Fetch picks whenever draftId changes
 
     const handleLiveToggle = () => {
         setIsLive(prevIsLive => !prevIsLive);
@@ -38,10 +55,13 @@ function Dashboard() {
     };
 
     const handleDraftOrderSubmit = () => {
-        const draftOrderArray = draftOrder.split(',').map(name => name.trim());
+        const draftOrderArray = draftOrder
+            .split(',')
+            .map(name => name.trim()); // Split by commas and trim spaces
+    
         setParsedDraftOrder(draftOrderArray); // Store the parsed array
         console.log('Draft Order:', draftOrderArray);
-    };
+    };    
 
     const handleDraftIdSubmit = () => {
         console.log('Draft ID submitted:', draftId);
@@ -87,6 +107,7 @@ function Dashboard() {
                 <button className="tablinks" onClick={() => setActiveTab('scatter')}>Scatter Plot</button>
                 <button className="tablinks" onClick={() => setActiveTab('inflation')}>Inflation Data</button>
                 <button className="tablinks" onClick={() => setActiveTab('teamBreakdown')}>Team Breakdown</button>
+                <button className="tablinks" onClick={() => setActiveTab('ticker')}>Ticker</button>
             </div>
 
             <div>
@@ -103,6 +124,7 @@ function Dashboard() {
             {activeTab === 'scatter' && <ScatterPlot draftId={draftId} isLive={isLive} />}
             {activeTab === 'inflation' && <InflationData draftId={draftId} isLive={isLive} />}
             {activeTab === 'teamBreakdown' && <TeamBreakdown draftId={draftId} isLive={isLive} draftOrder={parsedDraftOrder} />}
+            {activeTab === 'ticker' && <Ticker draftId={draftId} picks={picks} />} {/* Pass draftId and fetched picks */}
         </div>
     );
 }
