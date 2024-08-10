@@ -11,7 +11,7 @@ function ScatterPlot({ draftId, isLive }) {
         const fetchScatterData = async () => {
             console.log("Fetching scatter plot data for draft ID:", draftId);
 
-            // Check if data is already in localStorage
+            // Load cached data first if available
             const cachedScatterData = localStorage.getItem(`scatterData_${draftId}`);
             const cachedR2Data = localStorage.getItem(`r2Data_${draftId}`);
 
@@ -19,7 +19,6 @@ function ScatterPlot({ draftId, isLive }) {
                 console.log("Loading cached scatter plot data for draft ID:", draftId);
                 setScatterData(JSON.parse(cachedScatterData));
                 setR2Data(JSON.parse(cachedR2Data));
-                return;
             }
 
             try {
@@ -27,8 +26,11 @@ function ScatterPlot({ draftId, isLive }) {
                 if (response.data) {
                     setScatterData(response.data.scatterplot);
                     setR2Data(response.data.r2_values);
+
+                    // Cache the updated data even if it's live
                     localStorage.setItem(`scatterData_${draftId}`, JSON.stringify(response.data.scatterplot));
                     localStorage.setItem(`r2Data_${draftId}`, JSON.stringify(response.data.r2_values));
+                    
                     console.log("Scatter plot data loaded and cached successfully.");
                 }
             } catch (error) {
