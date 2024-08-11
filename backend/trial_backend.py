@@ -193,6 +193,10 @@ def calculate_inflation_rates(draft_data):
     # Call the function to calculate average tier costs
     avg_tier_costs = get_avg_tier_cost(draft_data, expected_values)
 
+    # Include tier and value in the expected_values
+    expected_values['Tier'] = expected_values['Tier'].fillna('N/A')
+    expected_values['Value'] = expected_values['Value'].fillna(0)
+
     for position in ["QB", "RB", "WR", "TE"]:
         pos_players = [player for player in draft_data if player["metadata"]["position"] == position]
         pos_spent = sum([int(player["metadata"]["amount"]) for player in pos_players])
@@ -234,6 +238,7 @@ def calculate_inflation_rates(draft_data):
         "positional": positional_inflation,
         "positional_tiered": positional_tier_inflation,
         "avg_tier_costs": avg_tier_costs,
+        "expected_values": expected_values.to_dict(orient='records')  # Include expected values in the response
     }, expected_values
 
 def calculate_r2_by_position(draft_data):
@@ -554,7 +559,8 @@ def get_inflation_rate():
             'picks_per_tier': picks_per_tier,
             'total_picks': total_picks,
             'avg_tier_costs': avg_tier_costs,
-            'doe_values': doe_values
+            'doe_values': doe_values,
+            'expected_values': inflation_rates['expected_values'],  # Include expected values in the response
         }
 
         # Sanitize the response data

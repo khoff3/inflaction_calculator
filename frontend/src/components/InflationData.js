@@ -103,29 +103,27 @@ const InflationTable = memo(({ inflationData, getColorClass }) => (
 function InflationData({ draftId, isLive }) {
     const [inflationData, setInflationData] = useState(null);
     const [error, setError] = useState(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true); // Set loading to true by default
 
     useEffect(() => {
         const fetchInflationData = async () => {
             console.log("Fetching inflation data for draft ID:", draftId);
     
-            // Bypass cache if live data is being fetched
             if (!isLive) {
                 const cachedData = localStorage.getItem(`inflationData_${draftId}`);
                 if (cachedData) {
                     console.log("Loading cached inflation data for draft ID:", draftId);
                     setInflationData(JSON.parse(cachedData));
+                    setLoading(false); // Data is loaded, stop loading
                     return;
                 }
             }
     
             if (!draftId) {
                 console.warn("Draft ID is missing, skipping fetch.");
+                setLoading(false); // No draft ID, stop loading
                 return;
             }
-    
-            setLoading(true);
-            setError(null);
     
             try {
                 const response = await axios.post('/inflation', { draft_id: draftId }, {
@@ -136,7 +134,6 @@ function InflationData({ draftId, isLive }) {
     
                 if (response.data) {
                     setInflationData(response.data);
-                    // Cache data only if not live
                     if (!isLive) {
                         localStorage.setItem(`inflationData_${draftId}`, JSON.stringify(response.data)); 
                     }
@@ -148,7 +145,7 @@ function InflationData({ draftId, isLive }) {
                 console.error('Error fetching inflation data:', error);
                 setError('Failed to fetch inflation data');
             } finally {
-                setLoading(false);
+                setLoading(false); // Data fetch completed, stop loading
             }
         };
     
@@ -192,5 +189,6 @@ function InflationData({ draftId, isLive }) {
         </div>
     );
 }
+
 
 export default InflationData;

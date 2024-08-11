@@ -43,58 +43,63 @@ const Ticker = ({ draftId, draftOrder }) => {
     };
 
     const computeExpectedValues = (pick) => {
-        if (!inflationData) return { expectedValue: 'N/A', doe: 'N/A', inflationPercent: 'N/A' };
+        if (!inflationData || !inflationData.expected_values) return { expectedValue: 'N/A', doe: 'N/A', inflationPercent: 'N/A', tier: 'N/A' };
     
         const playerName = `${pick.metadata.first_name} ${pick.metadata.last_name}`;
-        const expectedValueData = inflationData.player_values?.[playerName] || { value: 'N/A', tier: 'N/A' };
+        const expectedValueData = inflationData.expected_values.find(player => player.Player === playerName);
     
         let doe = 'N/A';
         let inflationPercent = 'N/A';
+        let tier = 'N/A';
     
-        if (expectedValueData.value !== 'N/A' && expectedValueData.value > 0) {
-            doe = (pick.metadata.amount - expectedValueData.value).toFixed(2);
-            inflationPercent = ((doe / expectedValueData.value) * 100).toFixed(2);
+        if (expectedValueData) {
+            const expectedValue = parseFloat(expectedValueData.Value);
+            tier = expectedValueData.Tier || 'N/A';
+            if (expectedValue > 0) {
+                doe = (pick.metadata.amount - expectedValue).toFixed(2);
+                inflationPercent = ((doe / expectedValue) * 100).toFixed(2);
+            }
         }
     
-        // Log data for debugging
-        console.log(`Player: ${playerName}, Amount: ${pick.metadata.amount}, Expected Value: ${expectedValueData.value}`);
-    
-        return { expectedValue: expectedValueData.value, doe, inflationPercent };
+        return { expectedValue: expectedValueData ? expectedValueData.Value : 'N/A', doe, inflationPercent, tier };
     };
+    
     
 
     return (
         <div className="ticker-container">
             <table className="ticker-table">
-                <thead>
-                    <tr>
-                        <th>Team</th>
-                        <th>Player</th>
-                        <th>Price</th>
-                        <th>Expected Price</th>
-                        <th>DOE</th>
-                        <th>Inflation %</th>
-                    </tr>
-                </thead>
+            <thead>
+                <tr>
+                    <th>Team</th>
+                    <th>Player</th>
+                    <th>Price</th>
+                    <th>Expected Price</th>
+                    <th>DOE</th>
+                    <th>Inflation %</th>
+                    <th>Tier</th>  {/* Add Tier header */}
+                </tr>
+            </thead>
                 <tbody>
-                    {visiblePicks.map((pick, index) => {
-                        const teamName = (draftOrder && draftOrder[pick.draft_slot - 1])
-                            ? draftOrder[pick.draft_slot - 1]
-                            : `Team ${pick.draft_slot}`;
-                        const { expectedValue, doe, inflationPercent } = computeExpectedValues(pick);
+                {visiblePicks.map((pick, index) => {
+                    const teamName = (draftOrder && draftOrder[pick.draft_slot - 1])
+                        ? draftOrder[pick.draft_slot - 1]
+                        : `Team ${pick.draft_slot}`;
+                    const { expectedValue, doe, inflationPercent, tier } = computeExpectedValues(pick);
 
-                        return (
-                            <tr key={index}>
-                                <td>{teamName}</td>
-                                <td>{pick.metadata.first_name} {pick.metadata.last_name}</td>
-                                <td>${pick.metadata.amount}</td>
-                                <td>${expectedValue}</td>
-                                <td>{doe}</td>
-                                <td>{inflationPercent}%</td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
+                    return (
+                        <tr key={index}>
+                            <td>{teamName}</td>
+                            <td>{pick.metadata.first_name} {pick.metadata.last_name}</td>
+                            <td>${pick.metadata.amount}</td>
+                            <td>${expectedValue}</td>
+                            <td>{doe}</td>
+                            <td>{inflationPercent}%</td>
+                            <td>{tier}</td>  {/* Add the Tier column */}
+                        </tr>
+                    );
+                })}
+            </tbody>
             </table>
             <button onClick={handleShowMore}>
                 {showMore ? 'Show Less' : 'Show More'}
