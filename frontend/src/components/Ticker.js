@@ -10,6 +10,7 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
     const [visiblePicks, setVisiblePicks] = useState([]);
     const [resultsPerPage, setResultsPerPage] = useState(10); // State to manage results per page
     const [inflationData, setInflationData] = useState(null);
+    const [expectedValuesLookup, setExpectedValuesLookup] = useState({});
 
     const [filters, setFilters] = useState({
         team: [],
@@ -44,48 +45,47 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
         { value: '10', label: '10' }
     ];
 
+    const buildExpectedValuesLookup = useCallback((inflationData) => {
+        const lookup = {};
+        if (inflationData && inflationData.expected_values) {
+            inflationData.expected_values.forEach(player => {
+                lookup[`${player.Player}`] = {
+                    expectedValue: parseFloat(player.Value),
+                    tier: player.Tier || 'N/A',
+                };
+            });
+        }
+        return lookup;
+    }, []);
+
     const computeExpectedValues = (pick) => {
-        if (!inflationData || !inflationData.expected_values) return { expectedValue: 'N/A', doe: 'N/A', inflationPercent: 'N/A', tier: 'N/A' };
-    
         const playerName = `${pick.metadata.first_name} ${pick.metadata.last_name}`;
-        const expectedValueData = inflationData.expected_values.find(player => {
-            // Log player names to see if they match
-            console.log(`Checking: ${player.Player} against ${playerName}`);
-            return player.Player === playerName;
-        });
-    
-        if (!expectedValueData) {
-            console.warn(`No match found for ${playerName}`);
-        }
-    
-        let doe = 'N/A';
-        let inflationPercent = 'N/A';
-        let tier = 'N/A';
-    
-        if (expectedValueData) {
-            const expectedValue = parseFloat(expectedValueData.Value);
-            tier = expectedValueData.Tier || 'N/A';
-            if (expectedValue > 0) {
-                doe = (pick.metadata.amount - expectedValue).toFixed(2);
-                inflationPercent = ((doe / expectedValue) * 100).toFixed(2);
-            }
-        }
-    
-        return { expectedValue: expectedValueData ? expectedValueData.Value : 'N/A', doe, inflationPercent, tier };
+        const playerData = expectedValuesLookup[playerName] || {
+            expectedValue: 'N/A',
+            tier: 'N/A',
+        };
+
+        const doe = playerData.expectedValue !== 'N/A' ? (pick.metadata.amount - playerData.expectedValue).toFixed(2) : 'N/A';
+        const inflationPercent = playerData.expectedValue !== 'N/A' ? ((doe / playerData.expectedValue) * 100).toFixed(2) : 'N/A';
+
+        return { ...playerData, doe, inflationPercent };
     };
-    
+
+    const validatePicks = (picks) => {
+        picks.forEach(pick => {
+            const { expectedValue, tier } = computeExpectedValues(pick);
+            if (expectedValue === 'N/A' || tier === 'N/A') {
+            }
+        });
+    };
 
     const applyFilters = useCallback((picks) => {
         return picks.map(pick => {
             const teamIndex = pick.draft_slot - 1;
             const teamName = draftOrder[teamIndex] ? draftOrder[teamIndex] : `Team ${pick.draft_slot}`;
-    
+
             const { expectedValue, doe, inflationPercent, tier } = computeExpectedValues(pick);
-    
-            if (expectedValue === 'N/A' || tier === 'N/A') {
-                console.warn(`Pick #${pick.pick_no}: ${pick.metadata.first_name} ${pick.metadata.last_name} is missing expected values or tier.`);
-            }
-    
+
             return {
                 ...pick,
                 visible: (
@@ -96,12 +96,12 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
                     (filters.expectedPriceRange[0] <= expectedValue && expectedValue <= filters.expectedPriceRange[1]) &&
                     (filters.doeRange[0] <= doe && doe <= filters.doeRange[1]) &&
                     (filters.inflationRange[0] <= inflationPercent && inflationPercent <= filters.inflationRange[1]) &&
-                    (filters.tier.length === 0 || filters.tier.includes(tier)) // Updated for multi-select
+                    (filters.tier.length === 0 || filters.tier.includes(tier))
                 )
             };
         });
-    }, [filters, draftOrder, inflationData, computeExpectedValues]);
-    
+    }, [filters, draftOrder, expectedValuesLookup]);
+
     useEffect(() => {
         const fetchPicks = async () => {
             try {
@@ -110,9 +110,7 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
                 setPicks(sortedPicks);
                 setVisiblePicks(applyFilters(sortedPicks).slice(0, resultsPerPage)); // Show the number of picks based on resultsPerPage
 
-                console.log('Picks:', sortedPicks);
-                console.log('Draft Order:', draftOrder);
-
+                validatePicks(sortedPicks); // Validate picks after they are loaded
             } catch (error) {
                 console.error("Failed to fetch picks data:", error);
             }
@@ -121,7 +119,9 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
         const fetchInflationData = async () => {
             try {
                 const response = await axios.post('http://localhost:5050/inflation', { draft_id: draftId });
-                setInflationData(response.data);
+                const data = response.data;
+                setInflationData(data);
+                setExpectedValuesLookup(buildExpectedValuesLookup(data)); // Precompute expected values lookup
             } catch (error) {
                 console.error("Failed to fetch inflation data:", error);
             }
@@ -129,13 +129,12 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
 
         fetchPicks();
         fetchInflationData();
-    }, [draftId, draftOrder]);
+    }, [draftId, draftOrder, applyFilters, buildExpectedValuesLookup]);
 
     useEffect(() => {
         const updatedPicks = applyFilters(picks);
         setVisiblePicks(updatedPicks.filter(pick => pick.visible).slice(0, resultsPerPage)); // Show the number of picks based on resultsPerPage
     }, [filters, picks, applyFilters, resultsPerPage]);
-    
 
     const handleResultsPerPageChange = (e) => {
         setResultsPerPage(parseInt(e.target.value));
@@ -221,8 +220,6 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
                             onChange={handleMultiSelectChange}
                         />
                     </label>
-
-
                 </div>
                 <div className="filter-column">
                     <label>
@@ -309,7 +306,7 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
                     </tr>
                 </thead>
                 <tbody>
-                    {visiblePicks.map((pick, index) => {
+                    {picks.map((pick, index) => {
                         const teamIndex = pick.draft_slot - 1;
                         const teamName = draftOrder[teamIndex] ? draftOrder[teamIndex] : `Team ${pick.draft_slot}`;
 
@@ -322,9 +319,9 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
                                 <td>{pick.metadata.first_name} {pick.metadata.last_name}</td>
                                 <td>{pick.metadata.position}</td>
                                 <td>${pick.metadata.amount}</td>
-                                <td>${expectedValue}</td>
-                                <td>{doe}</td>
-                                <td>{inflationPercent}%</td>
+                                <td>{expectedValue !== 'N/A' ? `$${expectedValue}` : 'N/A'}</td>
+                                <td>{doe !== 'N/A' ? `${doe}` : 'N/A'}</td>
+                                <td>{inflationPercent !== 'N/A' ? `${inflationPercent}%` : 'N/A'}</td>
                                 <td>{tier}</td>
                             </tr>
                         );
