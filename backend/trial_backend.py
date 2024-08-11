@@ -119,6 +119,7 @@ def map_players_to_ev_data(draft_data):
                 })
             else:
                 unmatched_players.append(player_name)
+                logging.warning(f"Unmatched Player: {player_name}")  # Log unmatched players
                 player['Value'] = 0
                 player['Tier'] = np.nan
 
