@@ -80,11 +80,6 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
     };
     useEffect(() => {
         const fetchTeamBreakdown = async () => {
-            if (draftOrder.length !== 12 || draftOrder.includes('')) {
-                console.warn("Draft order is not fully populated, skipping fetch.");
-                return;
-            }
-    
             console.log("Fetching team breakdown for draft ID:", draftId);
             console.log("Using draft order:", draftOrder);
     
@@ -97,7 +92,6 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
             setError(null);
     
             try {
-                // Force an API call if live mode is enabled
                 const response = await apiClient.get(`/team_breakdown?draft_id=${draftId}&is_live=${isLive}`);
                 const data = response.data;  // Use the data from the response
     
