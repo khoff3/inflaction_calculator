@@ -1,42 +1,144 @@
+/* Base styling for the table */
+.ticker-table {
+    width: 100%;
+    border-collapse: collapse; /* Collapse borders between cells */
+    margin-top: 20px;
+    border: 2px solid #ddd; /* Outline the edge of the table */
+    table-layout: fixed; /* Fix table layout to respect widths */
+    max-width: 1200px; /* Limit the maximum width of the table */
+    margin-left: auto; /* Center the table */
+    margin-right: auto; /* Center the table */
+    font-size: 20px; /* Increased font size for better readability */
+}
+
+/* Header styling */
+.ticker-table th {
+    padding: 10px; /* Slightly increased padding */
+    background-color: #f4f4f4;
+    border-bottom: 2px solid #ddd; /* Outline the header with a bottom border */
+    text-align: left;
+    font-size: 18px; /* Increased font size for headers */
+    white-space: nowrap;
+    overflow: wrap;
+    text-overflow: ellipsis;
+}
+
+/* Row styling */
+.ticker-table td {
+    padding: 10px; /* Slightly increased padding */
+    border-bottom: 1px solid #ddd; /* Add a bottom border to each row */
+    text-align: left;
+    font-size: 18px; /* Increased font size for rows */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Specific widths for each column */
+.ticker-table th:nth-child(1),  /* Pick # */
+.ticker-table td:nth-child(1) {
+    width: 60px; /* Slightly wider column for Pick # */
+}
+
+.ticker-table th:nth-child(2),  /* Team */
+.ticker-table td:nth-child(2) {
+    width: 100px; /* Slightly wider for Team names */
+}
+
+.ticker-table th:nth-child(3),  /* Player */
+.ticker-table td:nth-child(3) {
+    width: 180px; /* Wider for Player names */
+}
+
+.ticker-table th:nth-child(4),  /* Position */
+.ticker-table td:nth-child(4) {
+    width: 80px; /* Narrower for Position */
+    text-align: center; /* Center-align for Position */
+}
+
+.ticker-table th:nth-child(5),  /* Price */
+.ticker-table td:nth-child(5),
+.ticker-table th:nth-child(6),  /* Expected Price */
+.ticker-table td:nth-child(6),
+.ticker-table th:nth-child(7),  /* DOE */
+.ticker-table td:nth-child(7),
+.ticker-table th:nth-child(8),  /* Inflation % */
+.ticker-table td:nth-child(8) {
+    width: 80px;  /* Consistent width for numeric columns */
+    text-align: center;  /* Center-align for numeric values */
+}
+
+.ticker-table th:nth-child(9),  /* Tier */
+.ticker-table td:nth-child(9) {
+    width: 60px; /* Narrower width for Tier */
+    text-align: center;
+}
+
+/* Conditional formatting for numeric values */
+.ticker-table td {
+    color: #333; /* Default color */
+}
+
+.ticker-table td[data-positive="true"] {
+    color: green; /* Color positive values green */
+}
+
+.ticker-table td[data-negative="true"] {
+    color: red; /* Color negative values red */
+}
+
+/* Alternate row colors */
+.ticker-table tr:nth-child(even) {
+    background-color: #f9f9f9; /* Light background for even rows */
+}
+
+/* Container for centering table and filters */
+.ticker-container {
+    margin-left: auto;
+    margin-right: auto;
+    width: 95%;
+    max-width: 1200px; /* Limit the maximum width of the container */
+}
+
+/* Filters styling */
 .filters-container {
     display: flex;
     flex-wrap: wrap;
     gap: 20px;
-    width: 100%; /* Expand to full width */
+    width: 95%;
     margin-bottom: 20px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .filter-column {
-    flex: 1 1 40%; /* Adjust to take up half the width */
-}
-
-.filters-container label {
-    display: block;
-    margin-bottom: 10px;
-}
-
-.ticker-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-}
-
-.ticker-table th,
-.ticker-table td {
-    padding: 10px;
-    border: 1px solid #ddd;
-    text-align: left;
-}
-
-.ticker-table th {
-    background-color: #f4f4f4;
-}
-
-.results-per-page {
-    margin-top: 20px;
-}
-
-.results-per-page label {
-    display: inline-block;
+    flex: 1 1 40%;
+    margin-bottom: 20px;
+    margin-left: 10px;
     margin-right: 10px;
+}
+
+.filter-column select, .filter-column input {
+    width: 100%;
+    padding: 5px;
+    font-size: 18px;
+    box-sizing: border-box;
+}
+
+/* Reset button styling */
+.reset-button {
+    margin-top: 20px;
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.reset-button:hover {
+    background-color: #0056b3;
 }

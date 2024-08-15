@@ -1,60 +1,57 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import Select from 'react-select';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
-import './ticker.css'; // Ensure you have appropriate styling for the Ticker
-import axios from 'axios';
+import './ticker.css';
 
-const Ticker = ({ draftId, draftOrder = [] }) => {
+const Ticker = ({ draftId, draftOrder = [], isLive }) => {
     const [picks, setPicks] = useState([]);
-    const [visiblePicks, setVisiblePicks] = useState([]);
-    const [resultsPerPage, setResultsPerPage] = useState(10); // State to manage results per page
-    const [inflationData, setInflationData] = useState(null);
+    const [filteredPicks, setFilteredPicks] = useState([]);
     const [expectedValuesLookup, setExpectedValuesLookup] = useState({});
-
+    const [cachedResults, setCachedResults] = useState({});
     const [filters, setFilters] = useState({
         team: [],
-        playerName: '',
+        player: '',
         position: [],
-        pickNumberRange: [1, 100], // Added state for Pick Number Range
-        priceRange: [0, 200],
-        expectedPriceRange: [0, 200],
-        doeRange: [-50, 50],
-        inflationRange: [-100, 100],
-        tier: ''
+        tier: [],
+        price: [0, 100],
+        expectedPrice: [0, 100],
+        inflation: [-100, 100],
     });
 
-    const teamOptions = draftOrder.map((team, index) => ({ value: team, label: team || `Team ${index + 1}` }));
-    const positionOptions = [
-        { value: 'QB', label: 'QB' },
-        { value: 'RB', label: 'RB' },
-        { value: 'WR', label: 'WR' },
-        { value: 'TE', label: 'TE' }
-    ];
+    const defaultFilters = {
+        team: [],
+        player: '',
+        position: [],
+        tier: [],
+        price: [0, 100],
+        expectedPrice: [0, 100],
+        inflation: [-100, 100],
+    };
 
-    const tierOptions = [
-        { value: '1', label: '1' },
-        { value: '2', label: '2' },
-        { value: '3', label: '3' },
-        { value: '4', label: '4' },
-        { value: '5', label: '5' },
-        { value: '6', label: '6' },
-        { value: '7', label: '7' },
-        { value: '8', label: '8' },
-        { value: '9', label: '9' },
-        { value: '10', label: '10' }
-    ];
-
-    const buildExpectedValuesLookup = useCallback((inflationData) => {
+    const buildExpectedValuesLookup = useCallback((inflationData, playerData) => {
         const lookup = {};
+
         if (inflationData && inflationData.expected_values) {
             inflationData.expected_values.forEach(player => {
                 lookup[`${player.Player}`] = {
-                    expectedValue: parseFloat(player.Value),
+                    expectedValue: typeof player.Value === 'string' ? parseFloat(player.Value.replace('$', '')) : player.Value,
                     tier: player.Tier || 'N/A',
                 };
             });
         }
+
+        playerData.forEach(player => {
+            const name = player.player_name;
+            if (!lookup[name]) {
+                lookup[name] = {
+                    expectedValue: typeof player.auction_value === 'string' ? parseFloat(player.auction_value.replace('$', '')) : player.auction_value,
+                    tier: player.tier !== undefined ? player.tier : 'N/A',
+                };
+            }
+        });
+
         return lookup;
     }, []);
 
@@ -65,236 +62,273 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
             tier: 'N/A',
         };
 
-        const doe = playerData.expectedValue !== 'N/A' ? (pick.metadata.amount - playerData.expectedValue).toFixed(2) : 'N/A';
+        const doe = playerData.expectedValue !== 'N/A' ? (pick.metadata.amount - playerData.expectedValue).toFixed(0) : 'N/A';
         const inflationPercent = playerData.expectedValue !== 'N/A' ? ((doe / playerData.expectedValue) * 100).toFixed(2) : 'N/A';
 
-        return { ...playerData, doe, inflationPercent };
+        const normalizedTier = playerData.tier !== 'N/A' ? playerData.tier.toString().trim() : 'N/A';
+
+        return { ...playerData, doe, inflationPercent, tier: normalizedTier };
     };
 
-    const validatePicks = (picks) => {
-        picks.forEach(pick => {
-            const { expectedValue, tier } = computeExpectedValues(pick);
-            if (expectedValue === 'N/A' || tier === 'N/A') {
+    const fetchPicksAndData = useCallback(async () => {
+        if (!isLive && cachedResults[draftId]) {
+            const { fetchedPicks, lookup } = cachedResults[draftId];
+            setPicks(fetchedPicks);
+            setExpectedValuesLookup(lookup);
+        } else {
+            try {
+                const picksResponse = await axios.get(`http://localhost:5050/picks?draft_id=${draftId}`);
+                const fetchedPicks = picksResponse.data.sort((a, b) => b.pick_no - a.pick_no);
+                setPicks(fetchedPicks);
+
+                const playerList = fetchedPicks.map(pick => ({
+                    first_name: pick.metadata.first_name,
+                    last_name: pick.metadata.last_name,
+                    position: pick.metadata.position
+                }));
+
+                const [playerDataResponse, inflationDataResponse] = await Promise.all([
+                    axios.post('http://localhost:5050/player_lookup', { players: playerList }),
+                    axios.post('http://localhost:5050/inflation', { draft_id: draftId })
+                ]);
+
+                const playerData = playerDataResponse.data;
+                const inflationData = inflationDataResponse.data;
+
+                const lookup = buildExpectedValuesLookup(inflationData, playerData);
+                setExpectedValuesLookup(lookup);
+
+                setCachedResults(prevCache => ({
+                    ...prevCache,
+                    [draftId]: { fetchedPicks, lookup }
+                }));
+            } catch (error) {
+                console.error("Failed to fetch picks or data:", error);
             }
+        }
+    }, [draftId, cachedResults, buildExpectedValuesLookup, isLive]);
+
+    const applyFilters = useCallback(() => {
+        let filtered = picks;
+
+        if (filters.team.length > 0) {
+            filtered = filtered.filter(pick => {
+                const teamIndex = pick.draft_slot - 1;
+                const teamName = draftOrder[teamIndex] ? draftOrder[teamIndex] : `Team ${pick.draft_slot}`;
+                return filters.team.some(selectedTeam => selectedTeam.label === teamName);
+            });
+        }
+
+        if (filters.player) {
+            filtered = filtered.filter(pick =>
+                (`${pick.metadata.first_name} ${pick.metadata.last_name}`).toLowerCase().includes(filters.player.toLowerCase())
+            );
+        }
+
+        if (filters.position.length > 0) {
+            filtered = filtered.filter(pick =>
+                filters.position.some(selectedPos => selectedPos.label === pick.metadata.position)
+            );
+        }
+
+        if (filters.tier.length > 0) {
+            filtered = filtered.filter(pick => {
+                const { tier } = computeExpectedValues(pick);
+                return filters.tier.some(selectedTier => selectedTier.label === tier);
+            });
+        }
+
+        filtered = filtered.filter(pick => {
+            const price = parseFloat(pick.metadata.amount);
+            return price >= filters.price[0] && price <= filters.price[1];
         });
-    };
 
-    const applyFilters = useCallback((picks) => {
-        return picks.map(pick => {
-            const teamIndex = pick.draft_slot - 1;
-            const teamName = draftOrder[teamIndex] ? draftOrder[teamIndex] : `Team ${pick.draft_slot}`;
-
-            const { expectedValue, doe, inflationPercent, tier } = computeExpectedValues(pick);
-
-            return {
-                ...pick,
-                visible: (
-                    (filters.team.length === 0 || filters.team.includes(teamName)) &&
-                    (filters.playerName === '' || `${pick.metadata.first_name} ${pick.metadata.last_name}`.toLowerCase().includes(filters.playerName.toLowerCase())) &&
-                    (filters.position.length === 0 || filters.position.includes(pick.metadata.position)) &&
-                    (filters.priceRange[0] <= pick.metadata.amount && pick.metadata.amount <= filters.priceRange[1]) &&
-                    (filters.expectedPriceRange[0] <= expectedValue && expectedValue <= filters.expectedPriceRange[1]) &&
-                    (filters.doeRange[0] <= doe && doe <= filters.doeRange[1]) &&
-                    (filters.inflationRange[0] <= inflationPercent && inflationPercent <= filters.inflationRange[1]) &&
-                    (filters.tier.length === 0 || filters.tier.includes(tier))
-                )
-            };
+        filtered = filtered.filter(pick => {
+            const { expectedValue, inflationPercent } = computeExpectedValues(pick);
+            return (
+                expectedValue !== 'N/A' &&
+                expectedValue >= filters.expectedPrice[0] &&
+                expectedValue <= filters.expectedPrice[1] &&
+                inflationPercent >= filters.inflation[0] &&
+                inflationPercent <= filters.inflation[1]
+            );
         });
-    }, [filters, draftOrder, expectedValuesLookup]);
+
+        setFilteredPicks(filtered);
+    }, [picks, filters, draftOrder, computeExpectedValues]);
 
     useEffect(() => {
-        const fetchPicks = async () => {
-            try {
-                const response = await axios.get(`http://localhost:5050/picks?draft_id=${draftId}`);
-                const sortedPicks = response.data.sort((a, b) => b.pick_no - a.pick_no); // Sort by pick_no descending
-                setPicks(sortedPicks);
-                setVisiblePicks(applyFilters(sortedPicks).slice(0, resultsPerPage)); // Show the number of picks based on resultsPerPage
-
-                validatePicks(sortedPicks); // Validate picks after they are loaded
-            } catch (error) {
-                console.error("Failed to fetch picks data:", error);
-            }
-        };
-
-        const fetchInflationData = async () => {
-            try {
-                const response = await axios.post('http://localhost:5050/inflation', { draft_id: draftId });
-                const data = response.data;
-                setInflationData(data);
-                setExpectedValuesLookup(buildExpectedValuesLookup(data)); // Precompute expected values lookup
-            } catch (error) {
-                console.error("Failed to fetch inflation data:", error);
-            }
-        };
-
-        fetchPicks();
-        fetchInflationData();
-    }, [draftId, draftOrder, applyFilters, buildExpectedValuesLookup]);
+        applyFilters();
+    }, [picks, filters]);
 
     useEffect(() => {
-        const updatedPicks = applyFilters(picks);
-        setVisiblePicks(updatedPicks.filter(pick => pick.visible).slice(0, resultsPerPage)); // Show the number of picks based on resultsPerPage
-    }, [filters, picks, applyFilters, resultsPerPage]);
+        fetchPicksAndData();
 
-    const handleResultsPerPageChange = (e) => {
-        setResultsPerPage(parseInt(e.target.value));
-    };
+        if (isLive) {
+            const intervalId = setInterval(fetchPicksAndData, 10000);
+            return () => clearInterval(intervalId);
+        }
+    }, [draftId, isLive]);
 
-    const handleMultiSelectChange = (selectedOptions, actionMeta) => {
-        setFilters(prevFilters => ({
-            ...prevFilters,
-            [actionMeta.name]: selectedOptions ? selectedOptions.map(option => option.value) : []
-        }));
-    };
-
-    const handleSliderChange = (name, value) => {
+    const handleFilterChange = (name, value) => {
         setFilters(prevFilters => ({
             ...prevFilters,
             [name]: value
         }));
     };
 
-    const handleFilterChange = (e) => {
-        const { name, value } = e.target;
-        setFilters(prevFilters => ({
-            ...prevFilters,
-            [name]: value,
-        }));
+    const resetFilters = () => {
+        setFilters(defaultFilters);
     };
 
-    const handleResetFilters = () => {
-        setFilters({
-            team: [],
-            playerName: '',
-            position: [],
-            pickNumberRange: [1, 100], // Reset pick number range
-            priceRange: [0, 200],
-            expectedPriceRange: [0, 200],
-            doeRange: [-50, 50],
-            inflationRange: [-100, 100],
-            tier: ''
-        });
+    const teamOptions = draftOrder.map((team, index) => ({ label: team || `Team ${index + 1}`, value: index + 1 }));
+    const positionOptions = [...new Set(picks.map(pick => pick.metadata.position))].map(position => ({ label: position, value: position }));
+    const tierOptions = [...new Set(filteredPicks.map(pick => computeExpectedValues(pick).tier))]
+        .sort((a, b) => {
+            if (a === 'N/A') return 1;
+            if (b === 'N/A') return -1;
+            const tierA = parseFloat(a) || a;
+            const tierB = parseFloat(b) || b;
+            if (typeof tierA === 'number' && typeof tierB === 'number') {
+                return tierA - tierB;
+            } else {
+                return tierA.localeCompare(tierB);
+            }
+        })
+        .map(tier => ({ label: tier, value: tier }));
+
+    const getCellStyle = (value, isInflation = false) => {
+        if (isInflation) {
+            if (value > 30) {
+                return { color: '#800000' }; // Very dark red (bad)
+            } else if (value > 20) {
+                return { color: '#b30000' }; // Dark red (bad)
+            } else if (value > 10) {
+                return { color: '#e60000' }; // Medium red (bad)
+            } else if (value > 0) {
+                return { color: '#ff1a1a' }; // Light red (bad)
+            } else if (value < -30) {
+                return { color: '#004d00' }; // Very dark green (good)
+            } else if (value < -20) {
+                return { color: '#006600' }; // Dark green (good)
+            } else if (value < -10) {
+                return { color: '#009900' }; // Medium green (good)
+            } else {
+                return { color: '#00cc00' }; // Light green (good)
+            }
+        } else {
+            if (value < -30) {
+                return { color: '#004d00' }; // Very dark green (good)
+            } else if (value < -20) {
+                return { color: '#006600' }; // Dark green (good)
+            } else if (value < -10) {
+                return { color: '#009900' }; // Medium green (good)
+            } else if (value < 0) {
+                return { color: '#00cc00' }; // Light green (good)
+            } else if (value > 30) {
+                return { color: '#800000' }; // Very dark red (bad)
+            } else if (value > 20) {
+                return { color: '#b30000' }; // Dark red (bad)
+            } else if (value > 10) {
+                return { color: '#e60000' }; // Medium red (bad)
+            } else if (value > 5) {
+                return { color: '#ff1a1a' }; // Light red (bad)
+            }
+        }
+        return { color: 'black' };
     };
 
     return (
         <div className="ticker-container">
             <div className="filters-container">
                 <div className="filter-column">
-                    <label>
-                        Team:
-                        <Select
-                            isMulti
-                            name="team"
-                            options={teamOptions}
-                            className="basic-multi-select"
-                            classNamePrefix="select"
-                            value={teamOptions.filter(option => filters.team.includes(option.value))}
-                            onChange={handleMultiSelectChange}
-                        />
-                    </label>
-                    <label>
-                        Player:
-                        <input type="text" name="playerName" value={filters.playerName} onChange={handleFilterChange} placeholder="Player Name" />
-                    </label>
-                    <label>
-                        Position:
-                        <Select
-                            isMulti
-                            name="position"
-                            options={positionOptions}
-                            className="basic-multi-select"
-                            classNamePrefix="select"
-                            value={positionOptions.filter(option => filters.position.includes(option.value))}
-                            onChange={handleMultiSelectChange}
-                        />
-                    </label>
-                    <label>
-                        Tier:
-                        <Select
-                            isMulti
-                            name="tier"
-                            options={tierOptions}
-                            className="basic-multi-select"
-                            classNamePrefix="select"
-                            value={tierOptions.filter(option => filters.tier.includes(option.value))}
-                            onChange={handleMultiSelectChange}
-                        />
-                    </label>
+                    <label>Team:</label>
+                    <Select
+                        isMulti
+                        name="team"
+                        options={teamOptions}
+                        value={filters.team}
+                        onChange={value => handleFilterChange('team', value)}
+                        className="basic-multi-select"
+                        classNamePrefix="select"
+                    />
                 </div>
                 <div className="filter-column">
-                    <label>
-                        Pick Number Range:
-                        <Slider
-                            range
-                            min={1}
-                            max={100}
-                            value={filters.pickNumberRange}
-                            onChange={value => handleSliderChange('pickNumberRange', value)}
-                            marks={{ 1: '1', 100: '100' }}
-                        />
-                    </label>
-                    <label>
-                        Price Range:
-                        <Slider
-                            range
-                            min={0}
-                            max={200}
-                            value={filters.priceRange}
-                            onChange={value => handleSliderChange('priceRange', value)}
-                            marks={{ 0: '$0', 200: '$200' }}
-                        />
-                    </label>
-                    <label>
-                        Expected Price Range:
-                        <Slider
-                            range
-                            min={0}
-                            max={200}
-                            value={filters.expectedPriceRange}
-                            onChange={value => handleSliderChange('expectedPriceRange', value)}
-                            marks={{ 0: '$0', 200: '$200' }}
-                        />
-                    </label>
-                    <label>
-                        DOE Range:
-                        <Slider
-                            range
-                            min={-50}
-                            max={50}
-                            value={filters.doeRange}
-                            onChange={value => handleSliderChange('doeRange', value)}
-                            marks={{ '-50': '-$50', 50: '$50' }}
-                        />
-                    </label>
-                    <label>
-                        Inflation % Range:
-                        <Slider
-                            range
-                            min={-100}
-                            max={100}
-                            value={filters.inflationRange}
-                            onChange={value => handleSliderChange('inflationRange', value)}
-                            marks={{ '-100': '-100%', 100: '100%' }}
-                        />
-                    </label>
-                    <button onClick={handleResetFilters}>Reset Filters</button>
+                    <label>Player:</label>
+                    <input
+                        type="text"
+                        name="player"
+                        value={filters.player}
+                        onChange={e => handleFilterChange('player', e.target.value)}
+                        placeholder="Search player..."
+                    />
+                </div>
+                <div className="filter-column">
+                    <label>Position:</label>
+                    <Select
+                        isMulti
+                        name="position"
+                        options={positionOptions}
+                        value={filters.position}
+                        onChange={value => handleFilterChange('position', value)}
+                        className="basic-multi-select"
+                        classNamePrefix="select"
+                    />
+                </div>
+                <div className="filter-column">
+                    <label>Tier:</label>
+                    <Select
+                        isMulti
+                        name="tier"
+                        options={tierOptions}
+                        value={filters.tier}
+                        onChange={value => handleFilterChange('tier', value)}
+                        className="basic-multi-select"
+                        classNamePrefix="select"
+                    />
+                </div>
+                <div className="filter-column">
+                    <label>Price:</label>
+                    <Slider
+                        range
+                        min={0}
+                        max={100}
+                        value={filters.price}
+                        onChange={value => handleFilterChange('price', value)}
+                    />
+                    <div>{`$${filters.price[0]} - $${filters.price[1]}`}</div>
+                </div>
+                <div className="filter-column">
+                    <label>Expected Price:</label>
+                    <Slider
+                        range
+                        min={0}
+                        max={100}
+                        value={filters.expectedPrice}
+                        onChange={value => handleFilterChange('expectedPrice', value)}
+                    />
+                    <div>{`$${filters.expectedPrice[0]} - $${filters.expectedPrice[1]}`}</div>
+                </div>
+                <div className="filter-column">
+                    <label>Inflation %:</label>
+                    <Slider
+                        range
+                        min={-100}
+                        max={100}
+                        value={filters.inflation}
+                        onChange={value => handleFilterChange('inflation', value)}
+                    />
+                    <div>{`Inflation: from ${filters.inflation[0]}% to ${filters.inflation[1]}%`}</div>
                 </div>
             </div>
-            <div className="results-per-page">
-                <label>
-                    Results Per Page:
-                    <select value={resultsPerPage} onChange={handleResultsPerPageChange}>
-                        <option value="5">5</option>
-                        <option value="10">10</option>
-                        <option value="20">20</option>
-                        <option value="50">50</option>
-                    </select>
-                </label>
-            </div>
+            <button className="reset-button" onClick={resetFilters}>
+                Reset Filters
+            </button>
+
             <table className="ticker-table">
                 <thead>
                     <tr>
-                        <th>Pick #</th> {/* Added Pick Number column */}
+                        <th>Pick #</th>
                         <th>Team</th>
                         <th>Player</th>
                         <th>Position</th>
@@ -306,7 +340,7 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
                     </tr>
                 </thead>
                 <tbody>
-                    {picks.map((pick, index) => {
+                    {filteredPicks.map((pick, index) => {
                         const teamIndex = pick.draft_slot - 1;
                         const teamName = draftOrder[teamIndex] ? draftOrder[teamIndex] : `Team ${pick.draft_slot}`;
 
@@ -314,14 +348,14 @@ const Ticker = ({ draftId, draftOrder = [] }) => {
 
                         return (
                             <tr key={index}>
-                                <td>{pick.pick_no}</td> {/* Display Pick Number */}
+                                <td>{pick.pick_no}</td>
                                 <td>{teamName}</td>
                                 <td>{pick.metadata.first_name} {pick.metadata.last_name}</td>
                                 <td>{pick.metadata.position}</td>
                                 <td>${pick.metadata.amount}</td>
                                 <td>{expectedValue !== 'N/A' ? `$${expectedValue}` : 'N/A'}</td>
-                                <td>{doe !== 'N/A' ? `${doe}` : 'N/A'}</td>
-                                <td>{inflationPercent !== 'N/A' ? `${inflationPercent}%` : 'N/A'}</td>
+                                <td style={getCellStyle(doe)}>{doe !== 'N/A' ? `${doe}` : 'N/A'}</td>
+                                <td style={getCellStyle(inflationPercent)}>{inflationPercent !== 'N/A' ? `${inflationPercent}%` : 'N/A'}</td>
                                 <td>{tier}</td>
                             </tr>
                         );

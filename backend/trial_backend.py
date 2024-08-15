@@ -35,6 +35,19 @@ csv_filenames = {
     'TE': f'FantasyPros_{LATEST_YEAR}_Draft_TE_Rankings.csv'
 }
 
+# Load the player name mappings CSV
+mappings_df = pd.read_csv(MAPPINGS_PATH)
+
+# Load Auction Values
+auction_values_df = pd.read_csv(EXPECTED_VALUES_PATH)
+
+# Load Positional Rankings into a dictionary
+positional_rankings = {position: pd.read_csv(os.path.join(LATEST_DATA_DIR, filename))
+                       for position, filename in csv_filenames.items()}
+
+# Convert the mappings to a dictionary for easy lookup
+player_name_mappings = dict(zip(mappings_df['Sleeper Name'], mappings_df['Auction Value Name']))
+
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
@@ -83,45 +96,116 @@ def sanitize_data(data):
         return str(data)
     return data
 
+
+# Load the player name mappings CSV
+mappings_df = pd.read_csv(MAPPINGS_PATH)
+
+# Convert the mappings to a dictionary for easy lookup
+player_name_mappings = dict(zip(mappings_df['Sleeper Name'], mappings_df['Auction Value Name']))
+
+def get_player_info(player_name, position):
+    logging.debug(f"Looking up info for player: {player_name}, Position: {position}")
+    
+    # Initialize default values
+    auction_value = 'N/A'
+    tier = 'N/A'
+
+    # Direct lookup in main datasets first
+    auction_value_row = auction_values_df[auction_values_df['Player'] == player_name]
+    if not auction_value_row.empty:
+        auction_value = auction_value_row['Value'].values[0]
+        logging.debug(f"Auction value found directly for {player_name}: {auction_value}")
+    else:
+        logging.warning(f"No auction value found for {player_name}. Defaulting to $0.")
+        auction_value = 0
+
+    if position in positional_rankings:
+        ranking_df = positional_rankings[position]
+        tier_row = ranking_df[ranking_df['PLAYER NAME'] == player_name]
+        if not tier_row.empty:
+            tier = tier_row['TIERS'].values[0] if 'TIERS' in ranking_df.columns else 'N/A'
+            logging.debug(f"Correct Tier found directly for {player_name}: {tier}")
+        else:
+            logging.warning(f"No matching tier found for {player_name} in positional rankings.")
+
+    # Check if player name is in mappings (only for anomalies)
+    if auction_value == 'N/A' or tier == 'N/A':
+        mapped_row = mappings_df[mappings_df['Sleeper Name'] == player_name]
+        if not mapped_row.empty:
+            auction_name = mapped_row['Auction Value Name'].values[0]
+            tier_name_key = mapped_row['Tier Name'].values[0]
+            logging.debug(f"Mapping found for anomaly: Auction Name = {auction_name}, Tier Lookup Key = {tier_name_key}")
+
+            # Fetch the auction value using the mapped name
+            auction_value_row = auction_values_df[auction_values_df['Player'] == auction_name]
+            if not auction_value_row.empty:
+                auction_value = auction_value_row['Value'].values[0]
+                logging.debug(f"Auction value found for anomaly {auction_name}: {auction_value}")
+            else:
+                logging.warning(f"No auction value found for anomaly {auction_name}. Defaulting to $0.")
+                auction_value = 0
+
+            # Proceed to tier lookup regardless of auction value status
+            if position in positional_rankings:
+                ranking_df = positional_rankings[position]
+                tier_row = ranking_df[ranking_df['PLAYER NAME'] == tier_name_key]
+                if not tier_row.empty:
+                    tier = tier_row['TIERS'].values[0] if 'TIERS' in ranking_df.columns else 'N/A'
+                    logging.debug(f"Correct Tier found for anomaly {tier_name_key}: {tier}")
+                else:
+                    logging.warning(f"No matching tier found for anomaly {tier_name_key} in positional rankings.")
+
+    # Fallback to $0 if auction value is still 'N/A'
+    if auction_value == 'N/A':
+        logging.warning(f"Unable to determine auction value for {player_name}. Defaulting to $0.")
+        auction_value = 0
+
+    return auction_value, tier
+
+
 def map_players_to_ev_data(draft_data):
-    qb_data = pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['QB']))
-    rb_data = pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['RB']))
-    wr_data = pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['WR']))
-    te_data = pd.read_csv(os.path.join(LATEST_DATA_DIR, csv_filenames['TE']))
+    # Merge player data with auction values data
+    all_data = pd.concat([positional_rankings['QB'], positional_rankings['RB'], positional_rankings['WR'], positional_rankings['TE']], ignore_index=True)
+    merged_data = pd.merge(all_data, auction_values_df, left_on='PLAYER NAME', right_on='Player', how='left')
 
-    all_data = pd.concat([qb_data, rb_data, wr_data, te_data], ignore_index=True)
-    auction_values_data = pd.read_csv(EXPECTED_VALUES_PATH)
+    # Collect logs to print once per player
+    consolidated_logs = []
 
-    # Merge rankings data with auction values based on player name
-    merged_data = pd.merge(all_data, auction_values_data, left_on='PLAYER NAME', right_on='Player', how='left')
-
+    # Initialize lists for unmatched players and fuzzy matches
     unmatched_players = []
     fuzzy_matches = []
 
     for player in draft_data:
         player_name = player['metadata']['first_name'] + ' ' + player['metadata']['last_name']
-        best_match_name = process.extractOne(player_name, merged_data['PLAYER NAME'].tolist())[0]
-        matched_row = merged_data[merged_data['PLAYER NAME'] == best_match_name]
+        position = player['metadata']['position']
+        matched_row = merged_data[merged_data['PLAYER NAME'] == player_name]
 
-        if not matched_row.empty:
-            player['Value'] = matched_row.get('Value', np.nan).values[0]
-            player['Tier'] = matched_row.get('TIERS', np.nan).values[0]  # Ensure TIERS is correctly assigned
-        else:
-            best_match, score = process.extractOne(player_name, merged_data['PLAYER NAME'].tolist())
-            if score > 50:
-                matched_row = merged_data[merged_data['PLAYER NAME'] == best_match]
-                player['Value'] = matched_row.get('Value', np.nan).values[0]
-                player['Tier'] = matched_row.get('TIERS', np.nan).values[0]
+        # CSV Lookup or Fuzzy Matching
+        if matched_row.empty:
+            auction_name, tier_name = get_player_info(player_name, position)
+            if auction_name:
+                consolidated_logs.append(f"Lookup used for player: {player_name} -> {auction_name}")
+                matched_row = merged_data[merged_data['PLAYER NAME'] == auction_name]
                 fuzzy_matches.append({
                     'Original Name': player_name,
-                    'Best Match': best_match,
-                    'Similarity Score': score
+                    'Best Match': auction_name,
+                    'Similarity Score': 100  # Assuming direct match in this case
                 })
-            else:
-                unmatched_players.append(player_name)
-                logging.warning(f"Unmatched Player: {player_name}")  # Log unmatched players
-                player['Value'] = 0
-                player['Tier'] = np.nan
+
+        # Log the results
+        if not matched_row.empty:
+            player['Value'] = matched_row['Value'].values[0]
+            player['Tier'] = matched_row['TIERS'].values[0] if 'TIERS' in merged_data.columns else 'N/A'
+            consolidated_logs.append(f"Matched player: {player_name} with Value: {player['Value']} and Tier: {player['Tier']}")
+        else:
+            unmatched_players.append(player_name)
+            consolidated_logs.append(f"Unmatched Player: {player_name}")
+            player['Value'] = 0
+            player['Tier'] = 'N/A'
+
+    # Print consolidated logs only once per player
+    for log in consolidated_logs:
+        logging.debug(log)
 
     return draft_data, unmatched_players, fuzzy_matches
 
@@ -521,6 +605,42 @@ def get_picks():
     return jsonify(draft_data)
 
 
+def convert_to_serializable(obj):
+    """Convert numpy data types to serializable types."""
+    if isinstance(obj, np.generic):
+        return obj.item()
+    elif isinstance(obj, (np.ndarray, pd.Series)):
+        return obj.tolist()
+    else:
+        return obj
+
+@app.route('/player_lookup', methods=['POST'])
+def player_lookup():
+    try:
+        players = request.json.get('players', [])
+        results = []
+        for player in players:
+            player_name = f"{player['first_name']} {player['last_name']}"
+            position = player['position']
+            
+            # Call get_player_info with the correct arguments
+            auction_value, tier = get_player_info(player_name, position)
+            
+            # Convert data to serializable types
+            auction_value = convert_to_serializable(auction_value)
+            tier = convert_to_serializable(tier)
+            
+            results.append({
+                'player_name': player_name,
+                'auction_value': auction_value,
+                'tier': tier
+            })
+        
+        return jsonify(results)
+    except Exception as e:
+        logging.error(f"Error processing player lookup: {str(e)}")
+        return jsonify({"error": "An error occurred while processing the request"}), 500
+    
 @app.route('/inflation', methods=['GET', 'POST'])
 def get_inflation_rate():
     if request.method == 'POST':

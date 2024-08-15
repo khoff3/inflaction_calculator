@@ -121,10 +121,18 @@ function Dashboard() {
                 </label>
             </div>
 
-            {activeTab === 'scatter' && <ScatterPlot draftId={draftId} isLive={isLive} />}
-            {activeTab === 'inflation' && <InflationData draftId={draftId} isLive={isLive} />}
-            {activeTab === 'teamBreakdown' && <TeamBreakdown draftId={draftId} isLive={isLive} draftOrder={parsedDraftOrder} />}
-            {activeTab === 'ticker' && <Ticker draftId={draftId} picks={picks} draftOrder={parsedDraftOrder} />} {/* Pass draftOrder to Ticker */}
+            <div style={{ display: activeTab === 'scatter' ? 'block' : 'none' }}>
+                <ScatterPlot draftId={draftId} isLive={isLive} />
+            </div>
+            <div style={{ display: activeTab === 'inflation' ? 'block' : 'none' }}>
+                <InflationData draftId={draftId} isLive={isLive} />
+            </div>
+            <div style={{ display: activeTab === 'teamBreakdown' ? 'block' : 'none' }}>
+                <TeamBreakdown draftId={draftId} isLive={isLive} draftOrder={parsedDraftOrder} />
+            </div>
+            <div style={{ display: activeTab === 'ticker' ? 'block' : 'none' }}>
+                <Ticker draftId={draftId} picks={picks} draftOrder={parsedDraftOrder} isLive={isLive} />
+            </div>
         </div>
     );
 }
