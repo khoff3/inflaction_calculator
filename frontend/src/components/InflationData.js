@@ -17,7 +17,7 @@ const InflationData = ({ draftId, isLive }) => {
             lookup[name] = {
                 expectedValue: typeof player.auction_value === 'string' 
                     ? parseFloat(player.auction_value.replace('$', '')) 
-                    : player.auction_value || 'N/A',
+                    : player.auction_value || 0,
                 tier: player.tier !== undefined ? player.tier : 'N/A',
             };
         };
@@ -73,13 +73,13 @@ const InflationData = ({ draftId, isLive }) => {
             tieredInflation[position][tier].picks += 1;
         });
 
-        const overallInflation = totalExpectedCost !== 0 ? (totalDOE / totalExpectedCost * 100).toFixed(2) : 'N/A';
+        const overallInflation = totalExpectedCost !== 0 ? (totalDOE / totalExpectedCost * 100).toFixed(2) : 0;
 
         for (const pos in positionInflation) {
             const posData = positionInflation[pos];
             positionInflation[pos].inflation = posData.picks !== 0 
                 ? (posData.totalDOE / posData.picks).toFixed(2) 
-                : 'N/A';
+                : 0;
         }
 
         for (const pos in tieredInflation) {
@@ -87,17 +87,15 @@ const InflationData = ({ draftId, isLive }) => {
                 const tierData = tieredInflation[pos][tier];
                 tieredInflation[pos][tier].inflation = tierData.expectedCost !== 0 
                     ? ((tierData.totalDOE / tierData.expectedCost) * 100).toFixed(2) 
-                    : 'N/A';
+                    : 0;
                 tieredInflation[pos][tier].avgCost = tierData.picks !== 0 
                     ? (tierData.actualCost / tierData.picks).toFixed(2) 
-                    : 'N/A';
+                    : 0;
                 tieredInflation[pos][tier].doe = tierData.picks !== 0 
                     ? (tierData.totalDOE / tierData.picks).toFixed(2) 
-                    : 'N/A';
+                    : 0;
             }
         }
-
-        console.log('Final aggregated inflation data:', { overallInflation, positionInflation, tieredInflation, totalActualCost, totalExpectedCost, totalDOE });
 
         return {
             overallInflation,
@@ -106,6 +104,7 @@ const InflationData = ({ draftId, isLive }) => {
             totalPicks: picks.length
         };
     };
+
     const fetchAndAggregateData = useCallback(async (forceRefresh = false) => {
         const now = Date.now();
         const lastFetched = lastFetchedRef.current;
@@ -159,7 +158,7 @@ const InflationData = ({ draftId, isLive }) => {
             setError("Failed to fetch and aggregate inflation data.");
         }
     }, [draftId]);
-    
+
     useEffect(() => {
         console.log(`Tab activated or draftId changed: Checking cache for draftId ${draftId}`);
         
@@ -177,7 +176,7 @@ const InflationData = ({ draftId, isLive }) => {
             return () => clearInterval(intervalRef.current);
         }
     }, [draftId, isLive, fetchAndAggregateData]);
-    
+
     const getColorClass = (value) => {
         if (value > 15) return 'severe-positive';
         if (value > 10) return 'moderate-positive';
@@ -199,7 +198,7 @@ const InflationData = ({ draftId, isLive }) => {
             </Alert>
         );
     }
-    
+
     return (
         <div>
             <div className="mb-4">
@@ -221,15 +220,13 @@ const InflationData = ({ draftId, isLive }) => {
                             </tr>
                         </thead>
                         <tbody>
-                            {Object.keys(inflationData.positionInflation).map((position) => (
+                            {["QB", "RB", "WR", "TE"].map((position) => (
                                 <tr key={position}>
                                     <td>{position}</td>
-                                    <td className={getColorClass(inflationData.positionInflation[position].inflation)}>
-                                        {inflationData.positionInflation[position].inflation !== 'N/A'
-                                            ? `${inflationData.positionInflation[position].inflation}%`
-                                            : 'N/A'}
+                                    <td className={getColorClass(inflationData.positionInflation[position]?.inflation || 0)}>
+                                        {inflationData.positionInflation[position]?.inflation || 0}%
                                     </td>
-                                    <td>{inflationData.positionInflation[position].picks || '0'}</td>
+                                    <td>{inflationData.positionInflation[position]?.picks || '0'}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -253,22 +250,22 @@ const InflationData = ({ draftId, isLive }) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {Object.keys(inflationData.tieredInflation[position]).map((tier) => (
+                                    {Array.from({ length: 10 }, (_, i) => i + 1).map((tier) => (
                                         <tr key={tier}>
                                             <td>{tier}</td>
                                             <td id={`${position}-${tier}-inflation`}
-                                                className={getColorClass(inflationData.tieredInflation[position][tier].inflation)}>
-                                                {inflationData.tieredInflation[position][tier].inflation}%
+                                                className={getColorClass(inflationData.tieredInflation[position]?.[tier]?.inflation || 0)}>
+                                                {inflationData.tieredInflation[position]?.[tier]?.inflation || 0}%
                                             </td>
                                             <td id={`${position}-${tier}-picks`}>
-                                                {inflationData.tieredInflation[position][tier].picks || '0'}
+                                                {inflationData.tieredInflation[position]?.[tier]?.picks || '0'}
                                             </td>
                                             <td id={`${position}-${tier}-doe`}
-                                                className={getColorClass(inflationData.tieredInflation[position][tier].doe || 0)}>
-                                                ${parseFloat(inflationData.tieredInflation[position][tier].doe || 0).toFixed(2)}
+                                                className={getColorClass(inflationData.tieredInflation[position]?.[tier]?.doe || 0)}>
+                                                ${parseFloat(inflationData.tieredInflation[position]?.[tier]?.doe || 0).toFixed(2)}
                                             </td>
                                             <td id={`${position}-${tier}-avg_cost`}>
-                                                ${parseFloat(inflationData.tieredInflation[position][tier].avgCost || 0).toFixed(2)}
+                                                ${parseFloat(inflationData.tieredInflation[position]?.[tier]?.avgCost || 0).toFixed(2)}
                                             </td>
                                         </tr>
                                     ))}
@@ -280,7 +277,7 @@ const InflationData = ({ draftId, isLive }) => {
             )}
     
         </div>
-    );    
+    );
 };
 
 export default InflationData;

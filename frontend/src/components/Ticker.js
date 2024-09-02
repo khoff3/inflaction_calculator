@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import './ticker.css'; // Assuming your CSS is in this file
+import Select from 'react-select'; // Using react-select for multi-select dropdowns
+import './ticker.css';
+
+
+// Define the getColorSeverity function
+const getColorSeverity = (value) => {
+    if (Math.abs(value) >= 15) {
+        return 'severe';
+    } else if (Math.abs(value) >= 10) {
+        return 'moderate';
+    } else if (Math.abs(value) >= 3) {
+        return 'mild';
+    } else {
+        return 'neutral';
+    }
+};
 
 const Ticker = ({ draftId, draftOrder = [], isLive }) => {
     const [picks, setPicks] = useState([]);
@@ -8,10 +23,10 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
     const [expectedValuesLookup, setExpectedValuesLookup] = useState({});
     const [cachedResults, setCachedResults] = useState({});
     const [filters, setFilters] = useState({
-        team: '',
+        team: [],
         player: '',
-        position: '',
-        tier: ''
+        position: [],
+        tier: []
     });
 
     const buildExpectedValuesLookup = (inflationData, playerData) => {
@@ -54,7 +69,6 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
             ? (pick.metadata.amount - playerData.expectedValue).toFixed(2) 
             : 'N/A';
 
-        // Replace Infinity with "N/A"
         let inflationPercent;
         if (playerData.expectedValue === 0 || playerData.expectedValue === 'N/A') {
             inflationPercent = 'N/A';
@@ -106,11 +120,11 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
     const applyFilters = useCallback(() => {
         let filtered = picks;
 
-        if (filters.team) {
+        if (filters.team.length > 0) {
             filtered = filtered.filter(pick => {
                 const teamIndex = pick.draft_slot - 1;
                 const teamName = draftOrder[teamIndex] ? draftOrder[teamIndex] : `Team ${pick.draft_slot}`;
-                return teamName.toLowerCase().includes(filters.team.toLowerCase());
+                return filters.team.some(team => team.value === teamName);
             });
         }
 
@@ -120,16 +134,16 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
             );
         }
 
-        if (filters.position) {
+        if (filters.position.length > 0) {
             filtered = filtered.filter(pick =>
-                pick.metadata.position.toLowerCase().includes(filters.position.toLowerCase())
+                filters.position.some(pos => pos.value === pick.metadata.position)
             );
         }
 
-        if (filters.tier) {
+        if (filters.tier.length > 0) {
             filtered = filtered.filter(pick => {
                 const { tier } = computeExpectedValues(pick);
-                return tier.toLowerCase().includes(filters.tier.toLowerCase());
+                return filters.tier.some(t => t.value === tier);
             });
         }
 
@@ -148,23 +162,42 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
         applyFilters();
     }, [picks, filters]);
 
-    const handleFilterChange = (e) => {
-        const { name, value } = e.target;
+    const handleFilterChange = (selectedOptions, action) => {
+        const { name } = action;
         setFilters(prevFilters => ({
             ...prevFilters,
-            [name]: value
+            [name]: selectedOptions || []
         }));
     };
+
+    const teamOptions = draftOrder.map((team, index) => ({
+        value: team,
+        label: team || `Team ${index + 1}`
+    }));
+
+    const positionOptions = [
+        { value: 'QB', label: 'QB' },
+        { value: 'RB', label: 'RB' },
+        { value: 'WR', label: 'WR' },
+        { value: 'TE', label: 'TE' }
+    ];
+
+    const tierOptions = Array.from({ length: 10 }, (_, i) => ({
+        value: (i + 1).toString(),
+        label: `Tier ${i + 1}`
+    }));
 
     return (
         <div className="ticker-container">
             <div className="filters-container">
                 <div className="filter-column">
                     <label>Team:</label>
-                    <input
-                        type="text"
+                    <Select
+                        isMulti
                         name="team"
-                        value={filters.team}
+                        options={teamOptions}
+                        className="basic-multi-select"
+                        classNamePrefix="select"
                         onChange={handleFilterChange}
                     />
                 </div>
@@ -174,24 +207,28 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
                         type="text"
                         name="player"
                         value={filters.player}
-                        onChange={handleFilterChange}
+                        onChange={(e) => setFilters(prevFilters => ({ ...prevFilters, player: e.target.value }))}
                     />
                 </div>
                 <div className="filter-column">
                     <label>Position:</label>
-                    <input
-                        type="text"
+                    <Select
+                        isMulti
                         name="position"
-                        value={filters.position}
+                        options={positionOptions}
+                        className="basic-multi-select"
+                        classNamePrefix="select"
                         onChange={handleFilterChange}
                     />
                 </div>
                 <div className="filter-column">
                     <label>Tier:</label>
-                    <input
-                        type="text"
+                    <Select
+                        isMulti
                         name="tier"
-                        value={filters.tier}
+                        options={tierOptions}
+                        className="basic-multi-select"
+                        classNamePrefix="select"
                         onChange={handleFilterChange}
                     />
                 </div>
@@ -211,27 +248,40 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
                     </tr>
                 </thead>
                 <tbody>
-                    {filteredPicks.map((pick, index) => {
-                        const teamIndex = pick.draft_slot - 1;
-                        const teamName = draftOrder[teamIndex] ? draftOrder[teamIndex] : `Team ${pick.draft_slot}`;
+    {filteredPicks.map((pick, index) => {
+        const teamIndex = pick.draft_slot - 1;
+        const teamName = draftOrder[teamIndex] ? draftOrder[teamIndex] : `Team ${pick.draft_slot}`;
 
-                        const { expectedValue, doe, inflationPercent, tier } = computeExpectedValues(pick);
+        const { expectedValue, doe, inflationPercent, tier } = computeExpectedValues(pick);
 
-                        return (
-                            <tr key={index}>
-                                <td>{pick.pick_no}</td>
-                                <td>{teamName}</td>
-                                <td>{pick.metadata.first_name} {pick.metadata.last_name}</td>
-                                <td>{pick.metadata.position}</td>
-                                <td>${pick.metadata.amount}</td>
-                                <td>{expectedValue !== 'N/A' ? `$${expectedValue}` : 'N/A'}</td>
-                                <td>{doe !== 'N/A' ? `${doe}` : 'N/A'}</td>
-                                <td>{inflationPercent !== 'N/A' ? `${inflationPercent}%` : 'N/A'}</td>
-                                <td>{tier}</td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
+        return (
+            <tr key={index}>
+                <td>{pick.pick_no}</td>
+                <td>{teamName}</td>
+                <td>{pick.metadata.first_name} {pick.metadata.last_name}</td>
+                <td>{pick.metadata.position}</td>
+                <td>${pick.metadata.amount}</td>
+                <td>{expectedValue !== 'N/A' ? `$${expectedValue}` : 'N/A'}</td>
+                <td 
+                    data-doe
+                    data-positive={doe > 0 ? "true" : "false"} 
+                    data-severity={getColorSeverity(doe)}
+                >
+                    {doe !== 'N/A' ? `${doe}` : 'N/A'}
+                </td>
+                <td 
+                    data-inflation
+                    data-positive={inflationPercent > 0 ? "true" : "false"} 
+                    data-severity={getColorSeverity(inflationPercent)}
+                >
+                    {inflationPercent !== 'N/A' ? `${inflationPercent}%` : 'N/A'}
+                </td>
+                <td>{tier}</td>
+            </tr>
+        );
+    })}
+</tbody>
+
             </table>
         </div>
     );

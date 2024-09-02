@@ -1,23 +1,23 @@
 /* Base styling for the table */
 .ticker-table {
     width: 100%;
-    border-collapse: collapse; /* Collapse borders between cells */
+    border-collapse: collapse;
     margin-top: 20px;
-    border: 2px solid #ddd; /* Outline the edge of the table */
-    table-layout: fixed; /* Fix table layout to respect widths */
-    max-width: 1200px; /* Limit the maximum width of the table */
-    margin-left: auto; /* Center the table */
-    margin-right: auto; /* Center the table */
-    font-size: 20px; /* Increased font size for better readability */
+    border: 2px solid #ddd;
+    table-layout: fixed;
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+    font-size: 20px;
 }
 
 /* Header styling */
 .ticker-table th {
-    padding: 10px; /* Slightly increased padding */
+    padding: 10px;
     background-color: #f4f4f4;
-    border-bottom: 2px solid #ddd; /* Outline the header with a bottom border */
+    border-bottom: 2px solid #ddd;
     text-align: left;
-    font-size: 18px; /* Increased font size for headers */
+    font-size: 18px;
     white-space: nowrap;
     overflow: wrap;
     text-overflow: ellipsis;
@@ -25,71 +25,27 @@
 
 /* Row styling */
 .ticker-table td {
-    padding: 10px; /* Slightly increased padding */
-    border-bottom: 1px solid #ddd; /* Add a bottom border to each row */
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
     text-align: left;
-    font-size: 18px; /* Increased font size for rows */
+    font-size: 18px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* Specific widths for each column */
-.ticker-table th:nth-child(1),  /* Pick # */
-.ticker-table td:nth-child(1) {
-    width: 60px; /* Slightly wider column for Pick # */
-}
-
-.ticker-table th:nth-child(2),  /* Team */
-.ticker-table td:nth-child(2) {
-    width: 100px; /* Slightly wider for Team names */
-}
-
-.ticker-table th:nth-child(3),  /* Player */
-.ticker-table td:nth-child(3) {
-    width: 180px; /* Wider for Player names */
-}
-
-.ticker-table th:nth-child(4),  /* Position */
-.ticker-table td:nth-child(4) {
-    width: 80px; /* Narrower for Position */
-    text-align: center; /* Center-align for Position */
-}
-
-.ticker-table th:nth-child(5),  /* Price */
-.ticker-table td:nth-child(5),
-.ticker-table th:nth-child(6),  /* Expected Price */
-.ticker-table td:nth-child(6),
-.ticker-table th:nth-child(7),  /* DOE */
-.ticker-table td:nth-child(7),
-.ticker-table th:nth-child(8),  /* Inflation % */
-.ticker-table td:nth-child(8) {
-    width: 80px;  /* Consistent width for numeric columns */
-    text-align: center;  /* Center-align for numeric values */
-}
-
-.ticker-table th:nth-child(9),  /* Tier */
-.ticker-table td:nth-child(9) {
-    width: 60px; /* Narrower width for Tier */
-    text-align: center;
-}
-
 /* Conditional formatting for numeric values */
-.ticker-table td {
-    color: #333; /* Default color */
-}
-
 .ticker-table td[data-positive="true"] {
-    color: green; /* Color positive values green */
+    color: green;
 }
 
 .ticker-table td[data-negative="true"] {
-    color: red; /* Color negative values red */
+    color: red;
 }
 
 /* Alternate row colors */
 .ticker-table tr:nth-child(even) {
-    background-color: #f9f9f9; /* Light background for even rows */
+    background-color: #f9f9f9;
 }
 
 /* Container for centering table and filters */
@@ -97,7 +53,7 @@
     margin-left: auto;
     margin-right: auto;
     width: 95%;
-    max-width: 1200px; /* Limit the maximum width of the container */
+    max-width: 1200px;
 }
 
 /* Filters styling */
@@ -113,9 +69,6 @@
 
 .filter-column {
     flex: 1 1 40%;
-    margin-bottom: 20px;
-    margin-left: 10px;
-    margin-right: 10px;
 }
 
 .filter-column select, .filter-column input {
@@ -142,3 +95,52 @@
 .reset-button:hover {
     background-color: #0056b3;
 }
+
+/* Conditional formatting for DOE and Inflation % */
+.ticker-table td[data-doe],
+.ticker-table td[data-inflation] {
+    color: #333; /* Default color */
+}
+
+.ticker-table td[data-doe][data-positive="false"],
+.ticker-table td[data-inflation][data-positive="false"] {
+    /* Shades of green for negative values (good deals) */
+    color: #006400; /* Darker green for larger negative values */
+}
+
+.ticker-table td[data-doe][data-positive="false"][data-severity="mild"],
+.ticker-table td[data-inflation][data-positive="false"][data-severity="mild"] {
+    color: #32CD32; /* Lime green for mild negative values */
+}
+
+.ticker-table td[data-doe][data-positive="false"][data-severity="moderate"],
+.ticker-table td[data-inflation][data-positive="false"][data-severity="moderate"] {
+    color: #228B22; /* Forest green for moderate negative values */
+}
+
+.ticker-table td[data-doe][data-positive="false"][data-severity="severe"],
+.ticker-table td[data-inflation][data-positive="false"][data-severity="severe"] {
+    color: #006400; /* Dark green for severe negative values */
+}
+
+.ticker-table td[data-doe][data-positive="true"],
+.ticker-table td[data-inflation][data-positive="true"] {
+    /* Shades of red for positive values (overpayment) */
+    color: #FF4500; /* Orange red for larger positive values */
+}
+
+.ticker-table td[data-doe][data-positive="true"][data-severity="mild"],
+.ticker-table td[data-inflation][data-positive="true"][data-severity="mild"] {
+    color: #FF6347; /* Tomato red for mild positive values */
+}
+
+.ticker-table td[data-doe][data-positive="true"][data-severity="moderate"],
+.ticker-table td[data-inflation][data-positive="true"][data-severity="moderate"] {
+    color: #FF0000; /* Red for moderate positive values */
+}
+
+.ticker-table td[data-doe][data-positive="true"][data-severity="severe"],
+.ticker-table td[data-inflation][data-positive="true"][data-severity="severe"] {
+    color: #8B0000; /* Dark red for severe positive values */
+}
+

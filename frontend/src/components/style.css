@@ -238,3 +238,52 @@
         font-size: 9px;
     }
 }
+
+
+/* Conditional formatting for DOE and Inflation % */
+.ticker-table td[data-doe],
+.ticker-table td[data-inflation] {
+    color: #333; /* Default color */
+}
+
+.ticker-table td[data-doe][data-positive="false"],
+.ticker-table td[data-inflation][data-positive="false"] {
+    /* Shades of green for negative values (good deals) */
+    color: #006400; /* Darker green for larger negative values */
+}
+
+.ticker-table td[data-doe][data-positive="false"][data-severity="mild"],
+.ticker-table td[data-inflation][data-positive="false"][data-severity="mild"] {
+    color: #32CD32; /* Lime green for mild negative values */
+}
+
+.ticker-table td[data-doe][data-positive="false"][data-severity="moderate"],
+.ticker-table td[data-inflation][data-positive="false"][data-severity="moderate"] {
+    color: #228B22; /* Forest green for moderate negative values */
+}
+
+.ticker-table td[data-doe][data-positive="false"][data-severity="severe"],
+.ticker-table td[data-inflation][data-positive="false"][data-severity="severe"] {
+    color: #006400; /* Dark green for severe negative values */
+}
+
+.ticker-table td[data-doe][data-positive="true"],
+.ticker-table td[data-inflation][data-positive="true"] {
+    /* Shades of red for positive values (overpayment) */
+    color: #FF4500; /* Orange red for larger positive values */
+}
+
+.ticker-table td[data-doe][data-positive="true"][data-severity="mild"],
+.ticker-table td[data-inflation][data-positive="true"][data-severity="mild"] {
+    color: #FF6347; /* Tomato red for mild positive values */
+}
+
+.ticker-table td[data-doe][data-positive="true"][data-severity="moderate"],
+.ticker-table td[data-inflation][data-positive="true"][data-severity="moderate"] {
+    color: #FF0000; /* Red for moderate positive values */
+}
+
+.ticker-table td[data-doe][data-positive="true"][data-severity="severe"],
+.ticker-table td[data-inflation][data-positive="true"][data-severity="severe"] {
+    color: #8B0000; /* Dark red for severe positive values */
+}
