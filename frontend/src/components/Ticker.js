@@ -14,13 +14,15 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
         tier: ''
     });
 
-    const buildExpectedValuesLookup = useCallback((inflationData, playerData) => {
+    const buildExpectedValuesLookup = (inflationData, playerData) => {
         const lookup = {};
 
         if (inflationData && inflationData.expected_values) {
             inflationData.expected_values.forEach(player => {
-                lookup[`${player.Player}`] = {
-                    expectedValue: typeof player.Value === 'string' ? parseFloat(player.Value.replace('$', '')) : player.Value,
+                lookup[player.Player] = {
+                    expectedValue: typeof player.Value === 'string' 
+                        ? parseFloat(player.Value.replace('$', '')) 
+                        : player.Value,
                     tier: player.Tier || 'N/A',
                 };
             });
@@ -30,14 +32,16 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
             const name = player.player_name;
             if (!lookup[name]) {
                 lookup[name] = {
-                    expectedValue: typeof player.auction_value === 'string' ? parseFloat(player.auction_value.replace('$', '')) : player.auction_value,
+                    expectedValue: typeof player.auction_value === 'string' 
+                        ? parseFloat(player.auction_value.replace('$', '')) 
+                        : player.auction_value,
                     tier: player.tier !== undefined ? player.tier : 'N/A',
                 };
             }
         });
 
         return lookup;
-    }, []);
+    };
 
     const computeExpectedValues = (pick) => {
         const playerName = `${pick.metadata.first_name} ${pick.metadata.last_name}`;
@@ -46,13 +50,22 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
             tier: 'N/A',
         };
 
-        const doe = playerData.expectedValue !== 'N/A' ? (pick.metadata.amount - playerData.expectedValue).toFixed(2) : 'N/A';
-        const inflationPercent = playerData.expectedValue !== 'N/A' ? ((doe / playerData.expectedValue) * 100).toFixed(2) : 'N/A';
+        const doe = playerData.expectedValue !== 'N/A' 
+            ? (pick.metadata.amount - playerData.expectedValue).toFixed(2) 
+            : 'N/A';
+
+        // Replace Infinity with "N/A"
+        let inflationPercent;
+        if (playerData.expectedValue === 0 || playerData.expectedValue === 'N/A') {
+            inflationPercent = 'N/A';
+        } else {
+            inflationPercent = ((doe / playerData.expectedValue) * 100).toFixed(2);
+        }
 
         return { ...playerData, doe, inflationPercent };
     };
 
-    const fetchPicksAndData = useCallback(async () => {
+    const fetchPicksAndData = async () => {
         if (!isLive && cachedResults[draftId]) {
             const { fetchedPicks, lookup } = cachedResults[draftId];
             setPicks(fetchedPicks);
@@ -88,7 +101,7 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
                 console.error("Failed to fetch picks or data:", error);
             }
         }
-    }, [draftId, cachedResults, buildExpectedValuesLookup, isLive]);
+    };
 
     const applyFilters = useCallback(() => {
         let filtered = picks;
@@ -120,21 +133,20 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
             });
         }
 
-        setFilteredPicks(filtered);
+        setFilteredPicks(filtered.length > 0 ? filtered : picks);
     }, [picks, filters, draftOrder, computeExpectedValues]);
 
     useEffect(() => {
-        applyFilters();
-    }, [picks, filters, applyFilters]);
-
-    useEffect(() => {
         fetchPicksAndData();
-
         if (isLive) {
             const intervalId = setInterval(fetchPicksAndData, 10000);
             return () => clearInterval(intervalId);
         }
-    }, [draftId, isLive, fetchPicksAndData]);
+    }, [draftId, isLive]);
+
+    useEffect(() => {
+        applyFilters();
+    }, [picks, filters]);
 
     const handleFilterChange = (e) => {
         const { name, value } = e.target;

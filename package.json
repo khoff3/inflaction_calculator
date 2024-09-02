@@ -12,5 +12,6 @@
     "license": "ISC",
     "devDependencies": {
         "concurrently": "^8.2.2"
-  }
+    },
+    "proxy": "http://192.168.86.250:5050"
 }

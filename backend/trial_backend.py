@@ -549,6 +549,52 @@ def team_breakdown():
 
 @app.route('/scatter_data', methods=['GET'])
 def scatter_data():
+    try:
+        draft_id = request.args.get('draft_id')
+        if not draft_id:
+            return jsonify({"error": "Draft ID is required"}), 400
+
+        draft_data = get_draft_data(draft_id)
+        if not draft_data:
+            return jsonify({"error": "No draft data found"}), 404
+
+        draft_data, unmatched_players, fuzzy_matches = map_players_to_ev_data(draft_data)
+
+        scatter_data = {
+            "pick_no": [],
+            "metadata_amount": [],
+            "colors": [],
+            "player_names": [],
+            "expected_values": []
+        }
+
+        for index, player in enumerate(draft_data):
+            player_name = player['metadata']['first_name'] + ' ' + player['metadata']['last_name']
+            expected_value = player['Value']
+
+            if pd.isna(expected_value):
+                expected_value = "$0"
+
+            scatter_data["pick_no"].append(index + 1)
+            scatter_data["metadata_amount"].append(int(player['metadata']['amount']))
+            player_position = player['metadata']['position']
+            color = POSITION_COLORS.get(player_position, "gray")
+            scatter_data["colors"].append(color)
+            scatter_data["player_names"].append(player_name)
+            scatter_data["expected_values"].append(expected_value)
+
+        r2_values = calculate_r2_by_position(draft_data)
+
+        response_data = {
+            "scatterplot": scatter_data,
+            "r2_values": r2_values
+        }
+
+        logging.debug(f"Scatter data response: {response_data}")
+        return jsonify(response_data)
+    except Exception as e:
+        logging.error(f"Error processing scatter data request: {e}", exc_info=True)
+        return jsonify({"error": "Internal Server Error"}), 500
     draft_id = request.args.get('draft_id')
     if not draft_id:
         return jsonify({"error": "Draft ID is required"}), 400
