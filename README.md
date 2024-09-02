@@ -17,6 +17,3 @@
 ![Screenshot 2024-09-02 at 3 02 53 PM](https://github.com/user-attachments/assets/66fc7fb5-35e6-402b-bb06-4a0fb8edfbf6)
 ![Screenshot 2024-09-02 at 3 03 07 PM](https://github.com/user-attachments/assets/fe48e1fd-f9ee-497e-a4a8-52e8a42800f2)
 ![Screenshot 2024-09-02 at 3 03 20 PM](https://github.com/user-attachments/assets/89fe2f38-ae4e-44e2-b385-353f1ea84e6d)
-
-
-<img width="1578" alt="Screenshot 2023-09-06 at 2 29 49 PM" src="https://github.com/khoff3/inflaction_calculator/assets/46361316/d36a1a0e-a5a0-4792-9bec-8069fd3a04d6">
