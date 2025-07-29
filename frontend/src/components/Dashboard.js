@@ -3,7 +3,7 @@ import ScatterPlot from './ScatterPlot';
 import InflationData from './InflationData';
 import TeamBreakdown from './TeamBreakdown';
 import Ticker from './Ticker';
-import { dataService } from './utils/DataService';
+import axios from 'axios';
 
 function Dashboard() {
     const draftIdFromUrl = new URLSearchParams(window.location.search).get('draft_id');
@@ -13,20 +13,22 @@ function Dashboard() {
     const [activeTab, setActiveTab] = useState('scatter');
     const [isLive, setIsLive] = useState(isLiveFromUrl);
     const [draftOrder, setDraftOrder] = useState('');
-    const [parsedDraftOrder, setParsedDraftOrder] = useState([]);
-    const [picks, setPicks] = useState([]);
-
-    // Load draft order from localStorage on component mount
+    const [parsedDraftOrder, setParsedDraftOrder] = useState(() => {
+        // Load draft order from localStorage on component mount
+        const savedDraftOrder = localStorage.getItem('draftOrder');
+        return savedDraftOrder ? JSON.parse(savedDraftOrder) : [];
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    // Load draft order input field from localStorage on mount
     useEffect(() => {
         const savedDraftOrder = localStorage.getItem('draftOrder');
         if (savedDraftOrder) {
-            setDraftOrder(savedDraftOrder);
-            const draftOrderArray = savedDraftOrder
-                .split(',')
-                .map(name => name.trim());
-            setParsedDraftOrder(draftOrderArray);
+            const parsed = JSON.parse(savedDraftOrder);
+            setDraftOrder(parsed.join(', '));
         }
     }, []);
+    const [picks, setPicks] = useState([]);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -39,18 +41,17 @@ function Dashboard() {
 
     useEffect(() => {
         if (draftId) {
-            // Use DataService instead of direct API call
-            dataService.subscribe('picks', (data) => {
-                setPicks(data);
-            });
-            
-            dataService.startPolling(draftId, isLive);
-            
-            return () => {
-                dataService.unsubscribe('picks');
+            const fetchPicks = async () => {
+                try {
+                    const response = await axios.get(`http://localhost:5050/picks?draft_id=${draftId}`);
+                    setPicks(response.data);
+                } catch (error) {
+                    console.error("Failed to fetch picks data:", error);
+                }
             };
+            fetchPicks();
         }
-    }, [draftId, isLive]);
+    }, [draftId]);
 
     const handleLiveToggle = () => {
         setIsLive(prevIsLive => !prevIsLive);
@@ -74,14 +75,43 @@ function Dashboard() {
     
         setParsedDraftOrder(draftOrderArray);
         
-        // Save to localStorage for persistence
-        localStorage.setItem('draftOrder', draftOrder);
+        // Save draft order to localStorage for persistence
+        localStorage.setItem('draftOrder', JSON.stringify(draftOrderArray));
         
         console.log('Draft Order:', draftOrderArray);
     };
 
     const handleDraftIdSubmit = () => {
+        if (!draftId.trim()) {
+            alert('Please enter a valid Draft ID');
+            return;
+        }
+        
+        setIsSubmitting(true);
         console.log('Draft ID submitted:', draftId);
+        
+        // Trigger data fetching for all components
+        const fetchPicks = async () => {
+            try {
+                const response = await axios.get(`http://localhost:5050/picks?draft_id=${draftId}`);
+                setPicks(response.data);
+                console.log(`Successfully loaded ${response.data.length} picks for draft ID: ${draftId}`);
+                
+                // Show success message
+                alert(`Successfully loaded draft data! Found ${response.data.length} picks.`);
+                
+                // Lock the draft ID after successful submission
+                setIsLocked(true);
+                
+            } catch (error) {
+                console.error("Failed to fetch picks data:", error);
+                alert(`Error loading draft data: ${error.response?.data?.error || error.message}`);
+            } finally {
+                setIsSubmitting(false);
+            }
+        };
+        
+        fetchPicks();
     };
 
     return (
@@ -102,8 +132,8 @@ function Dashboard() {
                     {isLocked ? 'Unlock' : 'Lock'}
                 </button>
                 {!isLocked && (
-                    <button onClick={handleDraftIdSubmit}>
-                        Submit Draft ID
+                    <button onClick={handleDraftIdSubmit} disabled={isSubmitting}>
+                        {isSubmitting ? 'Loading...' : 'Submit Draft ID'}
                     </button>
                 )}
             </div>
