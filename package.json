@@ -5,7 +5,7 @@
     "main": "index.js",
     "scripts": {
         "frontend": "cd frontend && npm start",
-        "backend": "cd backend && python trial_backend.py",
+        "backend": "cd backend && source venv/bin/activate && python start_enhanced_backend.py",
         "start": "concurrently \"npm run frontend\" \"npm run backend\""
     },
     "author": "",

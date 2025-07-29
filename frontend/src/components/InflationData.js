@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import axios from 'axios';
 import { Table, Alert, Spinner } from 'react-bootstrap';
+import { dataService } from './utils/DataService';
 import './inflation.css';
 
 const InflationData = ({ draftId, isLive }) => {
     const [inflationData, setInflationData] = useState(null);
     const [error, setError] = useState(null);
     const cacheRef = useRef({});  // Cache to store fetched data
-    const intervalRef = useRef(null);  // Reference to interval for live updates
     const lastFetchedRef = useRef(null); // Store the last fetch time
 
     const buildExpectedValuesLookup = (inflationData, playerData) => {
@@ -105,75 +104,51 @@ const InflationData = ({ draftId, isLive }) => {
         };
     };
 
-    const fetchAndAggregateData = useCallback(async (forceRefresh = false) => {
-        const now = Date.now();
-        const lastFetched = lastFetchedRef.current;
-    
-        if (cacheRef.current[draftId] && !forceRefresh && (!lastFetched || (now - lastFetched < 10000))) {
-            setInflationData(cacheRef.current[draftId]);
-            console.log(`Loaded inflation data from cache for draftId ${draftId}`);
-            return;
-        }
-    
-        if (cacheRef.current[draftId]) {
-            setInflationData(cacheRef.current[draftId]);
-            console.log(`Showing cached data while fetching new data for draftId ${draftId}`);
-        }
-    
+    const fetchAndAggregateData = useCallback(async () => {
+        if (!draftId) return;
+
         try {
-            const picksResponse = await axios.get(`http://localhost:5050/picks?draft_id=${draftId}`);
-            const fetchedPicks = picksResponse.data;
-    
-            const playerList = fetchedPicks.map(pick => ({
-                first_name: pick.metadata.first_name,
-                last_name: pick.metadata.last_name,
-                position: pick.metadata.position
-            }));
-    
-            const [playerDataResponse, inflationDataResponse] = await Promise.all([
-                axios.post('http://localhost:5050/player_lookup', { players: playerList }),
-                axios.post('http://localhost:5050/inflation', { draft_id: draftId })
-            ]);
-    
-            const playerData = playerDataResponse.data;
-            const inflationData = inflationDataResponse.data;
-    
-            const lookup = buildExpectedValuesLookup(inflationData, playerData);
-    
-            if (!lookup || Object.keys(lookup).length === 0) {
-                setError("Failed to perform player lookups.");
-                return;
+            // Use DataService to get inflation data
+            const data = await dataService.fetchDataOnce('inflation', draftId);
+            
+            if (data) {
+                setInflationData(data);
+                cacheRef.current[draftId] = data;
+                lastFetchedRef.current = Date.now();
+                console.log('Fetched and aggregated new data for draftId', draftId);
+                console.log('Cache after storing data for draftId', draftId, ':', cacheRef.current);
             }
-    
-            const aggregatedData = aggregateInflationData(fetchedPicks, lookup);
-            setInflationData(aggregatedData);
-    
-            cacheRef.current[draftId] = aggregatedData;
-            lastFetchedRef.current = now;
-            console.log(`Fetched and aggregated new data for draftId ${draftId}`);
-            console.log(`Cache after storing data for draftId ${draftId}:`, cacheRef.current);
-    
         } catch (error) {
-            console.error("Error fetching or aggregating data:", error);
-            setError("Failed to fetch and aggregate inflation data.");
+            console.error('Error fetching inflation data:', error);
+            setError('Failed to fetch inflation data');
         }
     }, [draftId]);
 
     useEffect(() => {
-        console.log(`Tab activated or draftId changed: Checking cache for draftId ${draftId}`);
-        
-        console.log(`Current cacheRef before setting inflation data:`, cacheRef.current);
-        if (cacheRef.current[draftId]) {
-            console.log(`Showing cached data immediately for draftId ${draftId}`);
-            setInflationData(cacheRef.current[draftId]);
-        } else {
-            console.log(`No cached data found for draftId ${draftId}, fetching new data.`);
-            fetchAndAggregateData(); // Fetch new data if live or no cache available
+        if (!draftId) return;
+
+        // Check cache first
+        const cachedData = cacheRef.current[draftId];
+        if (cachedData) {
+            console.log('Showing cached data while fetching new data for draftId', draftId);
+            setInflationData(cachedData);
         }
-    
+
+        // Fetch fresh data
+        fetchAndAggregateData();
+
         if (isLive) {
-            intervalRef.current = setInterval(() => fetchAndAggregateData(true), 10000);
-            return () => clearInterval(intervalRef.current);
+            // Use DataService for live updates
+            dataService.subscribe('inflation', (data) => {
+                if (data) {
+                    setInflationData(data);
+                    cacheRef.current[draftId] = data;
+                }
+            });
+
+            return () => {
+                dataService.unsubscribe('inflation');
+            };
         }
     }, [draftId, isLive, fetchAndAggregateData]);
 

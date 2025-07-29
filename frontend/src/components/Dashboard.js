@@ -3,7 +3,7 @@ import ScatterPlot from './ScatterPlot';
 import InflationData from './InflationData';
 import TeamBreakdown from './TeamBreakdown';
 import Ticker from './Ticker';
-import axios from 'axios';
+import { dataService } from './utils/DataService';
 
 function Dashboard() {
     const draftIdFromUrl = new URLSearchParams(window.location.search).get('draft_id');
@@ -16,6 +16,18 @@ function Dashboard() {
     const [parsedDraftOrder, setParsedDraftOrder] = useState([]);
     const [picks, setPicks] = useState([]);
 
+    // Load draft order from localStorage on component mount
+    useEffect(() => {
+        const savedDraftOrder = localStorage.getItem('draftOrder');
+        if (savedDraftOrder) {
+            setDraftOrder(savedDraftOrder);
+            const draftOrderArray = savedDraftOrder
+                .split(',')
+                .map(name => name.trim());
+            setParsedDraftOrder(draftOrderArray);
+        }
+    }, []);
+
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         if (draftId) {
@@ -27,17 +39,18 @@ function Dashboard() {
 
     useEffect(() => {
         if (draftId) {
-            const fetchPicks = async () => {
-                try {
-                    const response = await axios.get(`http://localhost:5050/picks?draft_id=${draftId}`);
-                    setPicks(response.data);
-                } catch (error) {
-                    console.error("Failed to fetch picks data:", error);
-                }
+            // Use DataService instead of direct API call
+            dataService.subscribe('picks', (data) => {
+                setPicks(data);
+            });
+            
+            dataService.startPolling(draftId, isLive);
+            
+            return () => {
+                dataService.unsubscribe('picks');
             };
-            fetchPicks();
         }
-    }, [draftId]);
+    }, [draftId, isLive]);
 
     const handleLiveToggle = () => {
         setIsLive(prevIsLive => !prevIsLive);
@@ -60,6 +73,10 @@ function Dashboard() {
             .map(name => name.trim());
     
         setParsedDraftOrder(draftOrderArray);
+        
+        // Save to localStorage for persistence
+        localStorage.setItem('draftOrder', draftOrder);
+        
         console.log('Draft Order:', draftOrderArray);
     };
 
