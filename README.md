@@ -11,6 +11,7 @@ A real-time fantasy football auction draft inflation calculator with enhanced pe
 - **Smart Caching**: 30-second draft data TTL with change detection
 - **Performance Optimized**: Reduced API calls by ~80% during inactive periods
 - **2025 Data Integration**: Latest fantasy football rankings and auction values
+- **Player Notes System**: Hybrid localStorage + static JSON notes with targets and priorities
 
 ## 📁 **Project Structure**
 
@@ -31,6 +32,7 @@ inflaction_calculator/
 │   │   ├── Dashboard.js               # DataService integration
 │   │   ├── InflationData.js           # Real-time inflation calculations
 │   │   ├── TeamBreakdown.js           # Team roster analysis
+│   │   ├── AvailablePlayers.js        # Available players with notes system
 │   │   └── utils/
 │   │       └── DataService.js         # Centralized data management
 │   ├── package.json                   # Frontend dependencies
@@ -87,6 +89,8 @@ npm start
 - `GET /cache/stats` - Cache statistics and performance metrics
 - `POST /cache/clear` - Clear cache manually
 - `POST /player_lookup` - Fuzzy player name matching
+- `GET /draft_notes` - Global and draft-specific player notes
+- `GET /available_players` - Available players with tier and position data
 
 ## 🔧 **Frontend Components**
 
@@ -107,6 +111,14 @@ npm start
 - **Rate Limiting**: Prevents API overload during high activity
 - **Polling Management**: Adaptive polling based on draft activity
 
+### AvailablePlayers
+- **Notes System**: Hybrid localStorage + static JSON notes persistence
+- **Target Management**: Mark players as targets with priority levels
+- **Global Notes**: Shared notes across all drafts via static JSON
+- **Draft-Specific Notes**: Override global notes for specific drafts
+- **Filtering**: Filter by targets only, position, tier, and value ranges
+- **Real-time Updates**: Notes persist across browser sessions
+
 ## 🚀 **Performance Optimizations**
 
 1. **Smart Caching**: Hash-based change detection with TTL
@@ -122,6 +134,17 @@ npm start
 - **Cost of Waiting**: Calculate the cost of waiting different numbers of picks
 - **Position-Based R²**: Statistical analysis of spending patterns by position
 - **Real-time Calculations**: All analytics update in real-time as draft progresses
+
+## 📝 **Player Notes System**
+
+- **Hybrid Storage**: localStorage for immediate persistence + static JSON for sharing
+- **Global Notes**: Edit `backend/draft_notes.json` to share notes across all drafts
+- **Draft-Specific Overrides**: Local notes override global notes for specific drafts
+- **Target Management**: Mark players as targets with ⭐ indicators
+- **Priority Levels**: High, Medium, Low priority with color-coded badges
+- **Filtering**: "Targets Only" filter to show only marked targets
+- **Cross-Draft Persistence**: Notes persist across different draft sessions
+- **Manual JSON Editing**: Power users can edit the JSON file directly
 
 ## 🌐 **Access Points**
 

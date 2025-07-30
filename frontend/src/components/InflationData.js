@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import dataService from './utils/DataService';
+import axios from 'axios';
 import { Table, Alert, Spinner } from 'react-bootstrap';
-import { dataService } from './utils/DataService';
 import './inflation.css';
 
 const InflationData = ({ draftId, isLive }) => {
     const [inflationData, setInflationData] = useState(null);
     const [error, setError] = useState(null);
     const cacheRef = useRef({});  // Cache to store fetched data
+    const intervalRef = useRef(null);  // Reference to interval for live updates
     const lastFetchedRef = useRef(null); // Store the last fetch time
 
     const buildExpectedValuesLookup = (inflationData, playerData) => {
@@ -104,53 +106,175 @@ const InflationData = ({ draftId, isLive }) => {
         };
     };
 
-    const fetchAndAggregateData = useCallback(async () => {
-        if (!draftId) return;
-
+    const fetchAndAggregateData = useCallback(async (forceRefresh = false) => {
+        const now = Date.now();
+        const lastFetched = lastFetchedRef.current;
+    
+        if (cacheRef.current[draftId] && !forceRefresh && (!lastFetched || (now - lastFetched < 10000))) {
+            setInflationData(cacheRef.current[draftId]);
+            console.log(`Loaded inflation data from cache for draftId ${draftId}`);
+            return;
+        }
+    
+        if (cacheRef.current[draftId]) {
+            setInflationData(cacheRef.current[draftId]);
+            console.log(`Showing cached data while fetching new data for draftId ${draftId}`);
+        }
+    
         try {
-            // Use DataService to get inflation data
-            const data = await dataService.fetchDataOnce('inflation', draftId);
+            const picksResponse = await axios.get(`http://localhost:5050/picks?draft_id=${draftId}`);
+            const fetchedPicks = picksResponse.data;
+    
+            const playerList = fetchedPicks.map(pick => ({
+                first_name: pick.metadata.first_name,
+                last_name: pick.metadata.last_name,
+                position: pick.metadata.position
+            }));
+    
+            const [playerDataResponse, inflationDataResponse] = await Promise.all([
+                axios.post('http://localhost:5050/player_lookup', { players: playerList }),
+                axios.post('http://localhost:5050/inflation', { draft_id: draftId })
+            ]);
+    
+            const playerData = playerDataResponse.data;
+            const inflationData = inflationDataResponse.data;
+    
+            // Use the backend's calculated data and add tiered calculations
+            const lookup = buildExpectedValuesLookup(inflationData, playerData);
             
-            if (data) {
-                setInflationData(data);
-                cacheRef.current[draftId] = data;
-                lastFetchedRef.current = Date.now();
-                console.log('Fetched and aggregated new data for draftId', draftId);
-                console.log('Cache after storing data for draftId', draftId, ':', cacheRef.current);
+            if (!lookup || Object.keys(lookup).length === 0) {
+                setError("Failed to perform player lookups.");
+                return;
             }
+            
+            // Calculate tiered inflation using the backend's data and player lookup
+            const tieredInflation = {};
+            
+            // Process each position's players from backend data
+            Object.keys(inflationData.positional_data).forEach(position => {
+                const posData = inflationData.positional_data[position];
+                tieredInflation[position] = {};
+                
+                posData.players.forEach(player => {
+                    const playerLookup = lookup[player.name];
+                    let tier = 'N/A';
+                    
+                    // Use FantasyPros tier from backend, fallback to expected value only if needed
+                    if (playerLookup && playerLookup.tier && playerLookup.tier !== 'N/A') {
+                        tier = playerLookup.tier.toString(); // Ensure it's a string
+                    } else {
+                        // Fallback to expected value-based tiering only if no FantasyPros tier found
+                        const expectedValue = parseFloat(player.expected);
+                        if (expectedValue >= 50) tier = '1';
+                        else if (expectedValue >= 30) tier = '2';
+                        else if (expectedValue >= 20) tier = '3';
+                        else if (expectedValue >= 15) tier = '4';
+                        else if (expectedValue >= 10) tier = '5';
+                        else if (expectedValue >= 5) tier = '6';
+                        else if (expectedValue >= 3) tier = '7';
+                        else if (expectedValue >= 1) tier = '8';
+                        else tier = '9';
+                    }
+                    
+                    if (!tieredInflation[position][tier]) {
+                        tieredInflation[position][tier] = {
+                            actualCost: 0,
+                            expectedCost: 0,
+                            totalDOE: 0,
+                            picks: 0,
+                            inflation: 0,
+                            avgCost: 0,
+                            doe: 0
+                        };
+                    }
+                    
+                    const actualCost = parseFloat(player.amount);
+                    const expectedCost = parseFloat(player.expected);
+                    const doe = actualCost - expectedCost;
+                    
+                    tieredInflation[position][tier].actualCost += actualCost;
+                    tieredInflation[position][tier].expectedCost += expectedCost;
+                    tieredInflation[position][tier].totalDOE += doe;
+                    tieredInflation[position][tier].picks += 1;
+                });
+                
+                // Calculate averages and inflation for each tier
+                Object.keys(tieredInflation[position]).forEach(tier => {
+                    const tierData = tieredInflation[position][tier];
+                    tierData.inflation = tierData.expectedCost !== 0 
+                        ? ((tierData.totalDOE / tierData.expectedCost) * 100).toFixed(2) 
+                        : 0;
+                    tierData.avgCost = tierData.picks !== 0 
+                        ? (tierData.actualCost / tierData.picks).toFixed(2) 
+                        : 0;
+                    tierData.doe = tierData.picks !== 0 
+                        ? (tierData.totalDOE / tierData.picks).toFixed(2) 
+                        : 0;
+                });
+            });
+            
+            // Format the overall inflation as a percentage
+            const overallInflationPercent = parseFloat(inflationData.overall_inflation) * 100;
+            
+            // Convert positional inflation from decimal to percentage
+            const formattedPositionInflation = {};
+            Object.keys(inflationData.positional_inflation).forEach(position => {
+                const inflationValue = parseFloat(inflationData.positional_inflation[position]) * 100;
+                formattedPositionInflation[position] = inflationValue.toFixed(2);
+            });
+            
+            // Get pick counts for each position from backend data
+            const positionPickCounts = {};
+            Object.keys(inflationData.positional_data).forEach(position => {
+                positionPickCounts[position] = inflationData.positional_data[position].players.length;
+            });
+            
+            const backendData = {
+                overallInflation: overallInflationPercent.toFixed(2),
+                positionInflation: formattedPositionInflation,
+                positionPickCounts: positionPickCounts,
+                tieredInflation: tieredInflation,
+                totalPicks: fetchedPicks.length
+            };
+            
+            setInflationData(backendData);
+            
+            cacheRef.current[draftId] = backendData;
+            lastFetchedRef.current = now;
+            console.log(`Fetched and aggregated new data for draftId ${draftId}`);
+            console.log(`Cache after storing data for draftId ${draftId}:`, cacheRef.current);
+    
         } catch (error) {
-            console.error('Error fetching inflation data:', error);
-            setError('Failed to fetch inflation data');
+            console.error("Error fetching or aggregating data:", error);
+            setError("Failed to fetch and aggregate inflation data.");
         }
     }, [draftId]);
 
     useEffect(() => {
-        if (!draftId) return;
+        const componentId = `inflation-${draftId}`;
+        
+        // Subscribe to data updates
+        const unsubscribe = dataService.subscribe(componentId, (data) => {
+            if (data.picks && data.inflation && data.playerLookup) {
+                fetchAndAggregateData();
+            }
+        });
 
-        // Check cache first
-        const cachedData = cacheRef.current[draftId];
-        if (cachedData) {
-            console.log('Showing cached data while fetching new data for draftId', draftId);
-            setInflationData(cachedData);
+        // Start polling through the service
+        dataService.startPolling(draftId, isLive);
+
+        // Show cached data immediately if available
+        if (cacheRef.current[draftId]) {
+            setInflationData(cacheRef.current[draftId]);
+        } else {
+            fetchAndAggregateData();
         }
 
-        // Fetch fresh data
-        fetchAndAggregateData();
-
-        if (isLive) {
-            // Use DataService for live updates
-            dataService.subscribe('inflation', (data) => {
-                if (data) {
-                    setInflationData(data);
-                    cacheRef.current[draftId] = data;
-                }
-            });
-
-            return () => {
-                dataService.unsubscribe('inflation');
-            };
-        }
-    }, [draftId, isLive, fetchAndAggregateData]);
+        // Cleanup
+        return () => {
+            unsubscribe();
+        };
+    }, [draftId, isLive]);
 
     const getColorClass = (value) => {
         if (value > 15) return 'severe-positive';
@@ -160,6 +284,18 @@ const InflationData = ({ draftId, isLive }) => {
         if (value < -10) return 'moderate-negative';
         if (value < -3) return 'mild-negative';
         return 'neutral';
+    };
+
+    const getPositionColor = (position) => {
+        const colors = {
+            'QB': '#8A2BE2',  // Purple
+            'RB': '#32CD32',  // Green
+            'WR': '#FF8C00',  // Orange
+            'TE': '#1E90FF',  // Blue
+            'K': '#FFD700',   // Gold
+            'DEF': '#696969'  // Gray
+        };
+        return colors[position] || '#808080'; // Gray fallback
     };
 
     if (!inflationData) {
@@ -197,11 +333,11 @@ const InflationData = ({ draftId, isLive }) => {
                         <tbody>
                             {["QB", "RB", "WR", "TE"].map((position) => (
                                 <tr key={position}>
-                                    <td>{position}</td>
-                                    <td className={getColorClass(inflationData.positionInflation[position]?.inflation || 0)}>
-                                        {inflationData.positionInflation[position]?.inflation || 0}%
+                                    <td style={{ color: getPositionColor(position), fontWeight: 'bold' }}>{position}</td>
+                                    <td className={getColorClass(parseFloat(inflationData.positionInflation[position] || 0))}>
+                                        {inflationData.positionInflation[position] || 0}%
                                     </td>
-                                    <td>{inflationData.positionInflation[position]?.picks || '0'}</td>
+                                    <td>{inflationData.positionPickCounts[position] || 0}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -211,9 +347,9 @@ const InflationData = ({ draftId, isLive }) => {
     
             {inflationData.tieredInflation && (
                 <div className="tiered-inflation">
-                    {["QB", "RB", "WR", "TE"].map((position) => (
-                        <div key={position} className="tiered-position">
-                            <h3>{position.toUpperCase()}</h3>
+                                                {["QB", "RB", "WR", "TE"].map((position) => (
+                                <div key={position} className="tiered-position">
+                                    <h3 style={{ color: getPositionColor(position) }}>{position.toUpperCase()}</h3>
                             <Table bordered hover className="centered-table">
                                 <thead>
                                     <tr>
@@ -225,25 +361,28 @@ const InflationData = ({ draftId, isLive }) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {Array.from({ length: 10 }, (_, i) => i + 1).map((tier) => (
-                                        <tr key={tier}>
-                                            <td>{tier}</td>
-                                            <td id={`${position}-${tier}-inflation`}
-                                                className={getColorClass(inflationData.tieredInflation[position]?.[tier]?.inflation || 0)}>
-                                                {inflationData.tieredInflation[position]?.[tier]?.inflation || 0}%
-                                            </td>
-                                            <td id={`${position}-${tier}-picks`}>
-                                                {inflationData.tieredInflation[position]?.[tier]?.picks || '0'}
-                                            </td>
-                                            <td id={`${position}-${tier}-doe`}
-                                                className={getColorClass(inflationData.tieredInflation[position]?.[tier]?.doe || 0)}>
-                                                ${parseFloat(inflationData.tieredInflation[position]?.[tier]?.doe || 0).toFixed(2)}
-                                            </td>
-                                            <td id={`${position}-${tier}-avg_cost`}>
-                                                ${parseFloat(inflationData.tieredInflation[position]?.[tier]?.avgCost || 0).toFixed(2)}
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {Array.from({ length: 10 }, (_, i) => i + 1).map((tier) => {
+                                        const tierData = inflationData.tieredInflation[position]?.[tier] || inflationData.tieredInflation[position]?.[tier.toString()];
+                                        return (
+                                            <tr key={tier}>
+                                                <td>{tier}</td>
+                                                <td id={`${position}-${tier}-inflation`}
+                                                    className={getColorClass(tierData?.inflation || 0)}>
+                                                    {tierData?.inflation || 0}%
+                                                </td>
+                                                <td id={`${position}-${tier}-picks`}>
+                                                    {tierData?.picks || '0'}
+                                                </td>
+                                                <td id={`${position}-${tier}-doe`}
+                                                    className={getColorClass(tierData?.doe || 0)}>
+                                                    ${parseFloat(tierData?.doe || 0).toFixed(2)}
+                                                </td>
+                                                <td id={`${position}-${tier}-avg_cost`}>
+                                                    ${parseFloat(tierData?.avgCost || 0).toFixed(2)}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </Table>
                         </div>

@@ -427,7 +427,7 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                                                 {player?.name || ' '}
                                             </div>
                                             <div className="player-amount">
-                                                {player?.name ? `${player.amount}` : ''}
+                                                {player?.name ? `$${player.amount}` : ''}
                                             </div>
                                         </div>
                                     );
@@ -446,7 +446,7 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                                                 {player?.name || ' '}
                                             </div>
                                             <div className="player-amount">
-                                                {player?.name ? `${player.amount}` : ''}
+                                                {player?.name ? `$${player.amount}` : ''}
                                             </div>
                                         </div>
                                     );

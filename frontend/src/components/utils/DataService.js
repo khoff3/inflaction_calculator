@@ -15,26 +15,9 @@ class DataService {
         return () => this.subscribers.delete(componentId);
     }
 
-    // Unsubscribe from data updates
-    unsubscribe(componentId) {
-        this.subscribers.delete(componentId);
-    }
-
-    // Notify specific subscriber
-    notifySubscriber(componentId, data) {
-        const callback = this.subscribers.get(componentId);
-        if (callback) {
-            try {
-                callback(data);
-            } catch (error) {
-                console.error('Error in subscriber callback:', error);
-            }
-        }
-    }
-
     // Notify all subscribers of data updates
     notifySubscribers(data) {
-        this.subscribers.forEach((callback, componentId) => {
+        this.subscribers.forEach(callback => {
             try {
                 callback(data);
             } catch (error) {
@@ -61,10 +44,10 @@ class DataService {
         // Initial fetch
         this.fetchDataOnce();
 
-        // Start polling every 30 seconds to avoid rate limiting
+        // Start polling every 5 seconds
         this.pollingInterval = setInterval(() => {
             this.fetchDataOnce();
-        }, 30000);
+        }, 5000);
 
         this.isPolling = true;
     }
@@ -78,43 +61,7 @@ class DataService {
         this.isPolling = false;
     }
 
-    // Fetch specific data type once
-    async fetchDataOnce(dataType, draftId = this.draftId) {
-        if (!draftId) return null;
-
-        try {
-            switch (dataType) {
-                case 'picks':
-                    const picksResponse = await fetch(`/picks?draft_id=${draftId}`);
-                    return await picksResponse.json();
-                
-                case 'inflation':
-                    const inflationResponse = await fetch('/inflation', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ draft_id: draftId })
-                    });
-                    return await inflationResponse.json();
-                
-                case 'teamBreakdown':
-                    const teamResponse = await fetch(`/team_breakdown?draft_id=${draftId}&is_live=${this.isLive}`);
-                    return await teamResponse.json();
-                
-                case 'scatterData':
-                    const scatterResponse = await fetch(`/scatter_data?draft_id=${draftId}&is_live=${this.isLive}`);
-                    return await scatterResponse.json();
-                
-                default:
-                    console.warn(`Unknown data type: ${dataType}`);
-                    return null;
-            }
-        } catch (error) {
-            console.error(`Error fetching ${dataType}:`, error);
-            return null;
-        }
-    }
-
-    // Fetch data once (legacy method)
+    // Fetch data once
     async fetchDataOnce() {
         if (!this.draftId) return;
 
@@ -140,7 +87,7 @@ class DataService {
                 clearInterval(this.pollingInterval);
                 this.pollingInterval = setInterval(() => {
                     this.fetchDataOnce();
-                }, 60000); // Slow down to 60 seconds on error
+                }, 10000); // Slow down to 10 seconds on error
             }
         }
     }
@@ -226,4 +173,4 @@ class DataService {
 
 // Create singleton instance
 const dataService = new DataService();
-export { dataService }; 
+export default dataService; 
