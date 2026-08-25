@@ -25,12 +25,24 @@ from pathlib import Path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def get_latest_data_folder(base_dir):
-    """Retrieve the most recent year folder for data files."""
-    year_folders = glob.glob(os.path.join(base_dir, "20[0-9][0-9]"))
-    return max(year_folders, key=os.path.getmtime)
+    """Retrieve the most recent year folder for data files.
 
-# Use the latest data folder
-LATEST_DATA_DIR = get_latest_data_folder(BASE_DIR)
+    Selected by folder name, not mtime: a fresh clone stamps every folder with
+    the same checkout time, which made the choice between 2025/ and 2026/
+    arbitrary.
+    """
+    year_folders = glob.glob(os.path.join(base_dir, "20[0-9][0-9]"))
+    if not year_folders:
+        raise FileNotFoundError(f"No 20NN data folder found under {base_dir}")
+    return max(year_folders, key=lambda p: os.path.basename(p))
+
+# Use the latest data folder. DATA_YEAR pins a specific one, which is how you
+# re-run a prior season's numbers without moving files around.
+LATEST_DATA_DIR = (
+    os.path.join(BASE_DIR, os.environ['DATA_YEAR'])
+    if os.environ.get('DATA_YEAR')
+    else get_latest_data_folder(BASE_DIR)
+)
 LATEST_YEAR = os.path.basename(LATEST_DATA_DIR)
 
 # Dynamic paths
@@ -44,6 +56,17 @@ csv_filenames = {
     'WR': f'FantasyPros_{LATEST_YEAR}_Draft_WR_Rankings.csv',
     'TE': f'FantasyPros_{LATEST_YEAR}_Draft_TE_Rankings.csv'
 }
+
+def to_dollars(raw_value) -> float:
+    """Auction values arrive as "$25" or bare 25 depending on the export vintage."""
+    if isinstance(raw_value, str):
+        cleaned = raw_value.replace('$', '').replace(',', '').strip()
+        return float(cleaned) if cleaned else 0.0
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return 0.0
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -335,15 +358,12 @@ class DataManager:
             
             total_spent += amount
             
-            # Get expected value from cache
-            expected_value = 0
-            if player_name in self._data_cache['player_auction_lookup']:
-                raw_value = self._data_cache['player_auction_lookup'][player_name]['value']
-                # Convert to numeric value, handling string values like "$25"
-                if isinstance(raw_value, str):
-                    expected_value = float(raw_value.replace('$', '').replace(',', ''))
-                else:
-                    expected_value = float(raw_value)
+            # Expected value must come from the mapping-aware lookup, not a raw
+            # dict hit. Sleeper spells names differently from ETR (A.J. Brown /
+            # AJ Brown), and a direct-only lookup silently scored every one of
+            # those at $0 - shrinking total_expected and inflating the result.
+            raw_value, _ = self.get_player_info_optimized(player_name, position)
+            expected_value = to_dollars(raw_value)
             
             total_expected += expected_value
             positional_data[position]['spent'] += amount
@@ -671,7 +691,7 @@ async def get_available_players(draft_id: str, is_live: bool = False):
         for _, row in auction_values_df.iterrows():
             player_name = str(row['Player'])
             position = str(row['Position'])
-            auction_value = float(row['Value']) if pd.notna(row['Value']) else 0.0
+            auction_value = to_dollars(row['Value']) if pd.notna(row['Value']) else 0.0
             position_rank = str(row.get('Position Rank', 'N/A'))
             
             # Skip if player has been drafted
@@ -747,7 +767,7 @@ async def get_available_players(draft_id: str, is_live: bool = False):
         # Create a lookup dictionary for auction values
         for _, row in auction_values_df.iterrows():
             player_name = str(row['Player'])
-            auction_value = float(row['Value']) if pd.notna(row['Value']) else 0.0
+            auction_value = to_dollars(row['Value']) if pd.notna(row['Value']) else 0.0
             auction_values_dict[player_name] = auction_value
         
         for pick in draft_data:

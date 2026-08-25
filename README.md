@@ -66,6 +66,50 @@ npm install
 npm start
 ```
 
+## 📅 **Annual Data Update**
+
+Everything the backend reads lives in `backend/<YEAR>/`, and the highest year
+folder wins (`DATA_YEAR=2025` pins an older one). Two raw downloads become that
+folder:
+
+1. **FantasyPros draft rankings** — the combined ALL-positions export
+   (`FantasyPros_<YEAR>_Draft_ALL_Rankings.csv`). FantasyPros stopped shipping
+   four separate positional files; the build script splits it back out.
+2. **ETR auction values** (`NFL_ETR_Auction_Values.csv`). Their 2026 export
+   replaced the single `Value` column with one per scoring format, plus ESPN and
+   Yahoo ADP and a gsis player id. Full PPR is the league's scoring and the
+   default; `--scoring half_ppr` (or `superflex_full`, ...) picks another.
+
+Drop both into `backend/<YEAR>/`, then:
+
+```bash
+cd backend
+python build_year_data.py --year 2026 \
+    --etr 2026/NFL_ETR_Auction_Values.csv \
+    --fantasypros 2026/FantasyPros_2026_Draft_ALL_Rankings.csv
+python build_player_mappings.py --year 2026 --draft-id <any completed Sleeper draft>
+cd .. && python -m unittest tests.test_player_mappings
+```
+
+`build_year_data.py` writes `Standard_Auction_Values.csv` and the four positional
+ranking files. FantasyPros' tiers in the ALL export are *overall* (a QB starts at
+tier 4), so each position is dense-ranked back to 1..N — the tier breaks are
+theirs, only the numbering changes.
+
+`build_player_mappings.py` writes the annual anomaly file. Sleeper drops
+generational suffixes, ETR drops periods, and some names differ outright
+(`Kenny Gainwell` / `Kenneth Gainwell`); the first two resolve automatically, the
+rest come from `KNOWN_ALIASES` in that script. Anything it can't resolve is
+printed rather than guessed at, and players the sources genuinely don't cover
+land in `unpriced_players.csv` — those price at $0 by design.
+
+**Run the test before draft day.** An unmapped name doesn't raise: it resolves to
+$0, which shrinks the expected-value denominator and skews every inflation
+number on the board. The test walks a real draft's worth of names through the
+backend's own lookup and fails on any that don't land. Without `--draft-id` the
+mapping builder and the test both read `<YEAR>/sleeper_draft_names.csv`, a
+checked-in snapshot of one draft's picks.
+
 ## 🎯 **Key Improvements**
 
 - **Enhanced FastAPI Backend**: Better performance, async support, and 2025 data integration
