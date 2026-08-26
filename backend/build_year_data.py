@@ -27,6 +27,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import re
 
@@ -36,8 +37,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 POSITIONS = ["QB", "RB", "WR", "TE"]
 
-# Scoring format -> ETR column. The league is full PPR; the others are kept in
-# the raw export so a scoring variant only needs a different --scoring flag.
+# Scoring format -> ETR column. The league is standard (non-PPR) scoring; the
+# others are kept in the raw export so a variant only needs a different
+# --scoring flag. Note this is unrelated to the Standard_Auction_Values.csv
+# filename, which has meant "the canonical values file" since 2023.
 SCORING_COLUMNS = {
     "full_ppr": "ETR Full PPR",
     "half_ppr": "ETR Half PPR",
@@ -66,7 +69,7 @@ def normalize_name(name):
     return name
 
 
-def build_auction_values(etr_path, scoring="full_ppr"):
+def build_auction_values(etr_path, scoring="standard"):
     """Convert the ETR export into the Player/Team/Position/Value/Position Rank schema."""
     etr = pd.read_csv(etr_path)
     value_column = SCORING_COLUMNS[scoring]
@@ -132,8 +135,8 @@ def main():
     parser.add_argument("--year", required=True, help="Season year, e.g. 2026")
     parser.add_argument("--etr", required=True, help="Path to the raw ETR auction values export")
     parser.add_argument("--fantasypros", required=True, help="Path to the raw FantasyPros ALL rankings export")
-    parser.add_argument("--scoring", default="full_ppr", choices=sorted(SCORING_COLUMNS),
-                        help="Which ETR column becomes Value (default: full_ppr)")
+    parser.add_argument("--scoring", default="standard", choices=sorted(SCORING_COLUMNS),
+                        help="Which ETR column becomes Value (default: standard, the league's scoring)")
     parser.add_argument("--out-dir", default=None, help="Defaults to backend/<year>/")
     args = parser.parse_args()
 
@@ -145,10 +148,31 @@ def main():
     auction_values.to_csv(auction_path, index=False, quoting=1)
     print(f"{auction_path}: {len(auction_values)} players ({args.scoring})")
 
-    for position, frame in build_positional_rankings(args.fantasypros).items():
+    rankings = build_positional_rankings(args.fantasypros)
+    for position, frame in rankings.items():
         path = os.path.join(out_dir, f"FantasyPros_{args.year}_Draft_{position}_Rankings.csv")
         frame.to_csv(path, index=False, quoting=1)
         print(f"{path}: {len(frame)} players, tiers 1-{frame['TIERS'].max()}")
+
+    # Which scoring format a year folder was built from is invisible from the
+    # files themselves — Standard_Auction_Values.csv is named for its role, not
+    # for standard scoring. Record it so nobody has to guess later.
+    info = {
+        "year": args.year,
+        "scoring": args.scoring,
+        "value_column": SCORING_COLUMNS[args.scoring],
+        "sources": {
+            "auction_values": os.path.basename(args.etr),
+            "rankings": os.path.basename(args.fantasypros),
+        },
+        "counts": {"auction_values": len(auction_values),
+                   **{position: len(frame) for position, frame in rankings.items()}},
+    }
+    info_path = os.path.join(out_dir, "build_info.json")
+    with open(info_path, "w") as handle:
+        json.dump(info, handle, indent=2)
+        handle.write("\n")
+    print(f"{info_path}: built from {info['value_column']}")
 
 
 if __name__ == "__main__":

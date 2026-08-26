@@ -104,9 +104,16 @@ folder:
    (`FantasyPros_<YEAR>_Draft_ALL_Rankings.csv`). FantasyPros stopped shipping
    four separate positional files; the build script splits it back out.
 2. **ETR auction values** (`NFL_ETR_Auction_Values.csv`). Their 2026 export
-   replaced the single `Value` column with one per scoring format, plus ESPN and
-   Yahoo ADP and a gsis player id. Full PPR is the league's scoring and the
-   default; `--scoring half_ppr` (or `superflex_full`, ...) picks another.
+   replaced the single `Value` column with one per scoring format — `ETR Full
+   PPR`, `ETR Half PPR`, `ETR Std`, `ETR Superflex Full/Half` — plus ESPN and
+   Yahoo ADP and a gsis player id. The league plays **standard (non-PPR)**
+   scoring, so `ETR Std` is the default; `--scoring full_ppr` (or `half_ppr`,
+   `superflex_full`, ...) picks another.
+
+   Careful: `Standard_Auction_Values.csv` is named for its *role* — it has been
+   the canonical values file since 2023 — and that name is unrelated to standard
+   scoring. Which column a year folder was actually built from is recorded in
+   `<YEAR>/build_info.json`, so you never have to infer it from the filename.
 
 Drop both into `backend/<YEAR>/`, then:
 
@@ -114,13 +121,14 @@ Drop both into `backend/<YEAR>/`, then:
 cd backend
 python build_year_data.py --year 2026 \
     --etr 2026/NFL_ETR_Auction_Values.csv \
-    --fantasypros 2026/FantasyPros_2026_Draft_ALL_Rankings.csv
+    --fantasypros 2026/FantasyPros_2026_Draft_ALL_Rankings.csv \
+    --scoring standard
 python build_player_mappings.py --year 2026 --draft-id <any completed Sleeper draft>
 cd .. && python -m unittest tests.test_player_mappings
 ```
 
-`build_year_data.py` writes `Standard_Auction_Values.csv` and the four positional
-ranking files. FantasyPros' tiers in the ALL export are *overall* (a QB starts at
+`build_year_data.py` writes `Standard_Auction_Values.csv`, the four positional
+ranking files, and `build_info.json` recording the scoring format and sources. FantasyPros' tiers in the ALL export are *overall* (a QB starts at
 tier 4), so each position is dense-ranked back to 1..N — the tier breaks are
 theirs, only the numbering changes.
 
