@@ -21,10 +21,16 @@ inflaction_calculator/
 │   ├── fastapi_backend_enhanced.py    # Main Enhanced FastAPI application
 │   ├── start_enhanced_backend.py      # Enhanced backend startup script
 │   ├── requirements_fastapi.txt       # FastAPI dependencies
-│   ├── 2025/                          # Latest year data (QB, RB, WR, TE rankings)
+│   ├── build_year_data.py             # ETR + FantasyPros exports -> year folder
+│   ├── build_player_mappings.py       # Generates the annual name-anomaly file
+│   ├── 2026/                          # Latest year data (highest year folder wins)
+│   ├── 2025/                          # Historical data
 │   ├── 2024/                          # Historical data
 │   ├── 2023/                          # Historical data
 │   └── archive_old_files/             # Archived old Flask files
+├── scripts/
+│   ├── run-backend.js                 # Cross-platform backend launcher
+│   └── setup-backend.js               # Creates backend/.venv, installs deps
 ├── frontend/
 │   ├── src/components/                # React components
 │   │   ├── EnhancedTicker.js          # Advanced ticker with caching
@@ -42,28 +48,50 @@ inflaction_calculator/
 
 ## 🛠️ **Setup & Installation**
 
-### Quick Start (Recommended)
+Runs on Windows and macOS/Linux. You need **Node 18+** and **Python 3.11+**.
+
+### First time
 ```bash
-# Start both frontend and backend concurrently
-npm start
+npm run setup      # installs node deps, then creates backend/.venv and installs Python deps
 ```
 
-### Manual Setup
+### Every time after that
+```bash
+npm start          # frontend on :3000, backend on :5050, concurrently
+```
 
-#### Backend Setup
+Then open http://localhost:3000 and enter a Sleeper draft ID. The backend's own
+docs are at http://localhost:5050/docs, and http://localhost:5050/health reports
+which data year it loaded — check that it says the year you expect.
+
+### Running the halves separately
+```bash
+npm run backend    # FastAPI on :5050
+npm run frontend   # React dev server on :3000
+```
+
+`npm run backend` goes through `scripts/run-backend.js`, which resolves a Python
+that can actually import the dependencies — `$BACKEND_PYTHON` if set, else
+`backend/.venv` or `backend/venv` (`bin/python` on macOS/Linux,
+`Scripts\python.exe` on Windows), else `python3`/`python` from PATH. If none of
+them can, it says so and points at `npm run setup:backend` rather than failing
+with an import error halfway through boot.
+
+To use a Python you already have:
+```bash
+# macOS / Linux
+BACKEND_PYTHON=/path/to/python npm run backend
+# Windows (PowerShell)
+$env:BACKEND_PYTHON="C:\path\to\python.exe"; npm run backend
+```
+
+### Manual backend setup
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements_fastapi.txt
 python start_enhanced_backend.py
-```
-
-#### Frontend Setup
-```bash
-cd frontend
-npm install
-npm start
 ```
 
 ## 📅 **Annual Data Update**

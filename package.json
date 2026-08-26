@@ -1,17 +1,18 @@
 {
     "name": "inflation_calculator",
     "version": "1.0.0",
-    "description": "A project to calculate inflation using a React frontend and a Flask backend",
+    "description": "A project to calculate inflation using a React frontend and a FastAPI backend",
     "main": "index.js",
     "scripts": {
+        "setup:backend": "node scripts/setup-backend.js",
+        "setup": "npm install && cd frontend && npm install && cd .. && npm run setup:backend",
         "frontend": "cd frontend && npm start",
-        "backend": "cd backend && source venv/bin/activate && python start_enhanced_backend.py",
+        "backend": "node scripts/run-backend.js",
         "start": "concurrently \"npm run frontend\" \"npm run backend\""
     },
     "author": "",
     "license": "ISC",
     "devDependencies": {
         "concurrently": "^8.2.2"
-    },
-    "proxy": "http://192.168.86.250:5050"
+    }
 }
