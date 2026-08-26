@@ -123,6 +123,43 @@ class TestPlayerMappings(unittest.TestCase):
                 "something is bypassing get_player_info_optimized again."
         )
 
+    def test_whole_board_tiers_are_not_lost_to_spelling(self):
+        """Every player on the All Players board must be tiered, or genuinely unranked.
+
+        The tests above only walk the 192 names in one draft. The All Players tab
+        shows the entire auction board, so a spelling drift on a player nobody
+        drafted in that mock stays invisible until someone nominates them live and
+        the tier column comes up blank. A missing tier is only acceptable when
+        FantasyPros doesn't rank the player at all — never when both sources have
+        them under different spellings.
+        """
+        from build_year_data import normalize_name
+
+        tier_lookups = self.manager._data_cache['positional_tier_lookups']
+        ranked = {}
+        for position in POSITIONS:
+            for name in tier_lookups[position]:
+                ranked.setdefault(normalize_name(name), (position, name))
+
+        mismatched = []
+        for _, row in self.manager._data_cache['auction_values_df'].iterrows():
+            position = str(row['Position'])
+            if position not in POSITIONS:
+                continue  # K and DST are never tiered
+            name = str(row['Player'])
+            _, tier = self.manager.get_player_info_optimized(name, position)
+            if str(tier) not in ('N/A', 'nan'):
+                continue
+            match = ranked.get(normalize_name(name))
+            if match:
+                mismatched.append(f"{name} ({position}) -> FantasyPros has {match[1]!r} as {match[0]}")
+
+        self.assertEqual(
+            [], mismatched,
+            f"{len(mismatched)} players are in both sources but spelled differently, so the "
+            f"board shows them with no tier: {mismatched}"
+        )
+
     def test_mapping_targets_all_exist(self):
         """Nothing in player_name_mappings.csv should point at a name that isn't there."""
         tier_lookups = self.manager._data_cache['positional_tier_lookups']
