@@ -50,6 +50,12 @@ inflaction_calculator/
 
 Runs on Windows and macOS/Linux. You need **Node 18+** and **Python 3.11+**.
 
+macOS ships Python 3.9 as `python3`, and `brew install python@3.11` installs
+alongside it as `python3.11` rather than replacing it — so the bare name is
+usually the wrong interpreter on a Mac. `npm run setup` probes `python3.13`,
+`python3.12`, `python3.11`, then `python3`, and uses the first that meets the
+floor; `BACKEND_PYTHON` overrides the search.
+
 ### First time
 ```bash
 npm run setup      # installs node deps, then creates backend/.venv and installs Python deps
