@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import dataService from './utils/DataService';
 import './style.css';
 import apiClient from './utils/apiClient';
 
@@ -49,19 +50,91 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
     };
 
     const calculateBudgetLeft = (remainingBudget) => {
-        const symbols = Math.ceil(remainingBudget / 40);
-        return '💵'.repeat(symbols > 5 ? 5 : symbols) + '⚠️'.repeat(5 - symbols);
+        const percentage = Math.max(0, (remainingBudget / 200) * 100); // Ensure non-negative
+        const filledBars = Math.ceil(percentage / 20); // 5 bars total
+        const emptyBars = Math.max(0, 5 - filledBars);
+        
+        return {
+            filled: Math.min(5, filledBars), // Cap at 5
+            empty: emptyBars,
+            percentage: Math.round(percentage)
+        };
+    };
+
+    const assignFlexPosition = (players) => {
+        // Separate players by position
+        const byPosition = {
+            QB: players.filter(p => p.position === 'QB').sort((a, b) => b.amount - a.amount),
+            RB: players.filter(p => p.position === 'RB').sort((a, b) => b.amount - a.amount),
+            WR: players.filter(p => p.position === 'WR').sort((a, b) => b.amount - a.amount),
+            TE: players.filter(p => p.position === 'TE').sort((a, b) => b.amount - a.amount),
+            K: players.filter(p => p.position === 'K').sort((a, b) => b.amount - a.amount),
+            DEF: players.filter(p => p.position === 'DEF').sort((a, b) => b.amount - a.amount)
+        };
+
+        // Fill required starting positions first: 1 QB, 2 RB, 3 WR, 1 TE, 1 K, 1 DEF
+        const starters = [
+            ...byPosition.QB.slice(0, 1),     // 1 QB
+            ...byPosition.RB.slice(0, 2),     // 2 RB  
+            ...byPosition.WR.slice(0, 3),     // 3 WR
+            ...byPosition.TE.slice(0, 1),     // 1 TE
+            ...byPosition.K.slice(0, 1),      // 1 K
+            ...byPosition.DEF.slice(0, 1)     // 1 DEF
+        ];
+
+        // Find remaining flex-eligible players (RB, WR, TE after minimums filled)
+        const flexCandidates = [
+            ...byPosition.RB.slice(2),        // Extra RBs
+            ...byPosition.WR.slice(3),        // Extra WRs  
+            ...byPosition.TE.slice(1)         // Extra TEs
+        ].sort((a, b) => {
+            // Sort by amount descending, then by draft order (assuming lower pick numbers = earlier)
+            if (b.amount !== a.amount) return b.amount - a.amount;
+            return (a.pick_no || 999) - (b.pick_no || 999); // Earlier pick wins ties
+        });
+
+        // Assign highest spending flex candidate
+        if (flexCandidates.length > 0) {
+            const flexPlayer = { ...flexCandidates[0], position: 'Flex', originalPosition: flexCandidates[0].position };
+            starters.push(flexPlayer);
+
+            // Return all players with flex assignment
+            return players.map(player => {
+                if (player === flexCandidates[0]) {
+                    return flexPlayer;
+                }
+                return player;
+            });
+        }
+
+        return players;
     };
 
     const ensureStartingPositions = (starters) => {
-        const positionsNeeded = ['QB', 'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'Flex', 'DEF', 'K'];
-        const fullStarters = positionsNeeded.map(position => {
-            const player = starters.find(player => player.position === position);
-            if (player) {
-                starters = starters.filter(p => p !== player);
-                return player;
+        // First, assign flex position intelligently
+        const playersWithFlex = assignFlexPosition(starters);
+        
+        const positionsNeeded = ['QB', 'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'Flex', 'K', 'DEF'];
+        const fullStarters = [];
+        let remainingPlayers = [...playersWithFlex];
+
+        positionsNeeded.forEach(neededPosition => {
+            const playerIndex = remainingPlayers.findIndex(player => 
+                player.position === neededPosition
+            );
+            
+            if (playerIndex !== -1) {
+                const player = remainingPlayers[playerIndex];
+                fullStarters.push(player);
+                remainingPlayers.splice(playerIndex, 1);
             } else {
-                return { name: '', position, amount: 0 }; // Placeholder for open slot
+                // Add empty slot
+                fullStarters.push({ 
+                    name: '', 
+                    position: neededPosition, 
+                    amount: 0,
+                    isEmpty: true 
+                });
             }
         });
 
@@ -73,11 +146,28 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
         const filledBench = bench.slice(0, maxBenchSpots); 
 
         while (filledBench.length < maxBenchSpots) {
-            filledBench.push({ name: '', position: 'Bench', amount: 0 }); 
+            filledBench.push({ 
+                name: '', 
+                position: 'Bench', 
+                amount: 0,
+                isEmpty: true 
+            }); 
         }
 
         return filledBench;
     };
+
+    const calculateCorrectBudget = (teamData) => {
+        // Calculate actual spend and remaining budget
+        const totalSpent = [...teamData.starters, ...teamData.bench]
+            .reduce((sum, player) => sum + (player.amount || 0), 0);
+        
+        return {
+            totalSpend: totalSpent,
+            remainingBudget: Math.max(0, 200 - totalSpent) // Ensure non-negative
+        };
+    };
+
     useEffect(() => {
         const fetchTeamBreakdown = async () => {
             console.log("Fetching team breakdown for draft ID:", draftId);
@@ -93,20 +183,25 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
     
             try {
                 const response = await apiClient.get(`/team_breakdown?draft_id=${draftId}&is_live=${isLive}`);
-                const data = response.data;  // Use the data from the response
+                const data = response.data;
     
                 const allTeams = {};
                 for (let i = 1; i <= 12; i++) {
+                    const rawTeamData = data[i] || { starters: [], bench: [] };
+                    
+                    // Calculate correct budget
+                    const budgetInfo = calculateCorrectBudget(rawTeamData);
+                    
                     allTeams[i] = {
                         teamName: draftOrder[i - 1] || `Team ${i}`,
-                        totalSpend: data[i]?.totalSpend || 0,
-                        remainingBudget: data[i]?.remainingBudget || 200,
-                        starters: data[i]?.starters || [],
-                        bench: data[i]?.bench || [],
+                        totalSpend: budgetInfo.totalSpend,
+                        remainingBudget: budgetInfo.remainingBudget,
+                        starters: rawTeamData.starters || [],
+                        bench: rawTeamData.bench || [],
                     };
                 }
     
-                console.log("Final team assignments with names:", allTeams);
+                console.log("Final team assignments with corrected budgets:", allTeams);
     
                 const strengthsAndNeeds = calculateStrengthsAndNeeds(allTeams);
                 setTeamStrengths(strengthsAndNeeds);
@@ -131,12 +226,22 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
             }
         };
     
-        fetchTeamBreakdown();
-    
-        if (isLive) {
-            const interval = setInterval(fetchTeamBreakdown, 10000); // Update every 10 seconds if live
-            return () => clearInterval(interval);
-        }
+        const componentId = `teambreakdown-${draftId}`;
+        
+        // Subscribe to data updates
+        const unsubscribe = dataService.subscribe(componentId, (data) => {
+            if (data.picks) {
+                fetchTeamBreakdown();
+            }
+        });
+
+        // Start polling through the service
+        dataService.startPolling(draftId, isLive);
+
+        // Cleanup
+        return () => {
+            unsubscribe();
+        };
     }, [draftId, isLive, draftOrder]);
     
     
@@ -157,12 +262,13 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
     }
 
     const baseColors = {
-        QB: "#1E90FF", 
-        RB: "#32CD32", 
-        WR: "#FF8C00", 
-        TE: "#8A2BE2", 
-        DEF: "#696969", 
-        K: "#FFD700",
+        QB: "#8A2BE2",  // Purple
+        RB: "#32CD32",  // Green
+        WR: "#FF8C00",  // Orange
+        TE: "#1E90FF",  // Blue
+        K: "#FFD700",   // Gold
+        DEF: "#696969", // Gray
+        Flex: "#FF69B4" // Pink for flex
     };
 
     const adjustColorBrightness = (color, amount) => {
@@ -198,10 +304,10 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
         return adjustColorBrightness(baseColor, brightnessAdjustment);
     };
 
-    const getStrengthEmoji = (status) => {
-        if (status === "Strength") return "🟢";
-        if (status === "Need") return "⭕";
-        return "🚧";
+    const getStrengthIndicator = (status) => {
+        if (status === "Strength") return { symbol: "▲", color: "#22c55e", label: "Strength" };
+        if (status === "Need") return { symbol: "▼", color: "#ef4444", label: "Need" };
+        return { symbol: "●", color: "#6b7280", label: "Neutral" };
     };
 
     const filterStrengthsAndNeeds = (status) => {
@@ -232,6 +338,20 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                     Show Neutral
                 </label>
             </div>
+            <div className="legend-container">
+                <div className="legend-item">
+                    <span className="indicator-symbol" style={{ color: "#22c55e" }}>▲</span>
+                    <span>Strength</span>
+                </div>
+                <div className="legend-item">
+                    <span className="indicator-symbol" style={{ color: "#ef4444" }}>▼</span>
+                    <span>Need</span>
+                </div>
+                <div className="legend-item">
+                    <span className="indicator-symbol" style={{ color: "#6b7280" }}>●</span>
+                    <span>Neutral</span>
+                </div>
+            </div>
             <div className="grid-container" style={{ transform: `scale(${zoomLevel})` }}>
                 {teamData && Object.entries(teamData).map(([teamSlot, team]) => {
                     if (!team) {
@@ -247,7 +367,24 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                             <div className="team-stats">
                                 <div className="money"><strong>Spend:</strong> ${totalSpend}</div>
                                 <div className="money"><strong>Budget:</strong> ${remainingBudget}</div>
-                                <div className="money">{calculateBudgetLeft(remainingBudget)}</div>
+                                <div className="budget-visual">
+                                    {(() => {
+                                        const budget = calculateBudgetLeft(remainingBudget);
+                                        return (
+                                            <div className="budget-bars">
+                                                <div className="budget-label">Budget: {budget.percentage}%</div>
+                                                <div className="budget-bar-container">
+                                                    {[...Array(budget.filled)].map((_, i) => (
+                                                        <div key={`filled-${i}`} className="budget-bar filled"></div>
+                                                    ))}
+                                                    {[...Array(budget.empty)].map((_, i) => (
+                                                        <div key={`empty-${i}`} className="budget-bar empty"></div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
                             </div>
                             <div className="position-grid">
                                 <div className="position-labels">
@@ -256,16 +393,29 @@ const TeamBreakdown = ({ draftId, isLive, draftOrder }) => {
                                     <div>WR</div>
                                     <div>TE</div>
                                 </div>
-                                <div className="position-emojis">
-                                    <div>{filterStrengthsAndNeeds(teamStrengths?.[teamSlot]?.QB) ? getStrengthEmoji(teamStrengths[teamSlot]?.QB) : ''}</div>
-                                    <div>{filterStrengthsAndNeeds(teamStrengths?.[teamSlot]?.RB) ? getStrengthEmoji(teamStrengths[teamSlot]?.RB) : ''}</div>
-                                    <div>{filterStrengthsAndNeeds(teamStrengths?.[teamSlot]?.WR) ? getStrengthEmoji(teamStrengths[teamSlot]?.WR) : ''}</div>
-                                    <div>{filterStrengthsAndNeeds(teamStrengths?.[teamSlot]?.TE) ? getStrengthEmoji(teamStrengths[teamSlot]?.TE) : ''}</div>
+                                <div className="position-indicators">
+                                    {['QB', 'RB', 'WR', 'TE'].map(position => {
+                                        const status = teamStrengths?.[teamSlot]?.[position];
+                                        const indicator = getStrengthIndicator(status);
+                                        
+                                        if (!filterStrengthsAndNeeds(status)) return <div key={position}></div>;
+                                        
+                                        return (
+                                            <div key={position} className="strength-indicator" title={indicator.label}>
+                                                <span 
+                                                    className="indicator-symbol"
+                                                    style={{ color: indicator.color }}
+                                                >
+                                                    {indicator.symbol}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                             <div className="player-card-container">
                                 {starters.map((player, index) => {
-                                    const backgroundColor = player?.name ? getColorByPositionAndSpend(player.position, player.amount) : 'transparent';
+                                    const backgroundColor = player?.name ? getColorByPositionAndSpend(player.originalPosition || player.position, player.amount) : 'transparent';
 
                                     return (
                                         <div 

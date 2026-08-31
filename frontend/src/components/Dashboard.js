@@ -3,6 +3,7 @@ import ScatterPlot from './ScatterPlot';
 import InflationData from './InflationData';
 import TeamBreakdown from './TeamBreakdown';
 import Ticker from './Ticker';
+import AvailablePlayers from './AvailablePlayers';
 import axios from 'axios';
 
 function Dashboard() {
@@ -13,7 +14,21 @@ function Dashboard() {
     const [activeTab, setActiveTab] = useState('scatter');
     const [isLive, setIsLive] = useState(isLiveFromUrl);
     const [draftOrder, setDraftOrder] = useState('');
-    const [parsedDraftOrder, setParsedDraftOrder] = useState([]);
+    const [parsedDraftOrder, setParsedDraftOrder] = useState(() => {
+        // Load draft order from localStorage on component mount
+        const savedDraftOrder = localStorage.getItem('draftOrder');
+        return savedDraftOrder ? JSON.parse(savedDraftOrder) : [];
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    // Load draft order input field from localStorage on mount
+    useEffect(() => {
+        const savedDraftOrder = localStorage.getItem('draftOrder');
+        if (savedDraftOrder) {
+            const parsed = JSON.parse(savedDraftOrder);
+            setDraftOrder(parsed.join(', '));
+        }
+    }, []);
     const [picks, setPicks] = useState([]);
 
     useEffect(() => {
@@ -60,11 +75,44 @@ function Dashboard() {
             .map(name => name.trim());
     
         setParsedDraftOrder(draftOrderArray);
+        
+        // Save draft order to localStorage for persistence
+        localStorage.setItem('draftOrder', JSON.stringify(draftOrderArray));
+        
         console.log('Draft Order:', draftOrderArray);
     };
 
     const handleDraftIdSubmit = () => {
+        if (!draftId.trim()) {
+            alert('Please enter a valid Draft ID');
+            return;
+        }
+        
+        setIsSubmitting(true);
         console.log('Draft ID submitted:', draftId);
+        
+        // Trigger data fetching for all components
+        const fetchPicks = async () => {
+            try {
+                const response = await axios.get(`http://localhost:5050/picks?draft_id=${draftId}`);
+                setPicks(response.data);
+                console.log(`Successfully loaded ${response.data.length} picks for draft ID: ${draftId}`);
+                
+                // Show success message
+                alert(`Successfully loaded draft data! Found ${response.data.length} picks.`);
+                
+                // Lock the draft ID after successful submission
+                setIsLocked(true);
+                
+            } catch (error) {
+                console.error("Failed to fetch picks data:", error);
+                alert(`Error loading draft data: ${error.response?.data?.error || error.message}`);
+            } finally {
+                setIsSubmitting(false);
+            }
+        };
+        
+        fetchPicks();
     };
 
     return (
@@ -85,8 +133,8 @@ function Dashboard() {
                     {isLocked ? 'Unlock' : 'Lock'}
                 </button>
                 {!isLocked && (
-                    <button onClick={handleDraftIdSubmit}>
-                        Submit Draft ID
+                    <button onClick={handleDraftIdSubmit} disabled={isSubmitting}>
+                        {isSubmitting ? 'Loading...' : 'Submit Draft ID'}
                     </button>
                 )}
             </div>
@@ -108,6 +156,7 @@ function Dashboard() {
                 <button className="tablinks" onClick={() => setActiveTab('inflation')}>Inflation Data</button>
                 <button className="tablinks" onClick={() => setActiveTab('teamBreakdown')}>Team Breakdown</button>
                 <button className="tablinks" onClick={() => setActiveTab('ticker')}>Ticker</button>
+                <button className="tablinks" onClick={() => setActiveTab('availablePlayers')}>All Players</button>
             </div>
 
             <div>
@@ -132,6 +181,9 @@ function Dashboard() {
             </div>
             <div style={{ display: activeTab === 'ticker' ? 'block' : 'none' }}>
                 <Ticker draftId={draftId} picks={picks} draftOrder={parsedDraftOrder} isLive={isLive} />
+            </div>
+            <div style={{ display: activeTab === 'availablePlayers' ? 'block' : 'none' }}>
+                <AvailablePlayers draftId={draftId} isLive={isLive} />
             </div>
         </div>
     );

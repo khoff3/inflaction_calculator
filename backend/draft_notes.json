@@ -1,0 +1,41 @@
+{
+  "global_notes": {
+    "Brian Thomas Jr.": {
+      "note": "Great upside, worth targeting in round 3",
+      "target": true,
+      "priority": "high",
+      "position": "WR",
+      "last_updated": "2024-01-15T10:30:00Z"
+    },
+    "Kenneth Walker III": {
+      "note": "Injury concerns, avoid unless value",
+      "target": false,
+      "priority": "low",
+      "position": "RB",
+      "last_updated": "2024-01-15T10:31:00Z"
+    },
+    "Marvin Harrison Jr.": {
+      "note": "Elite talent, top target",
+      "target": true,
+      "priority": "high",
+      "position": "WR",
+      "last_updated": "2024-01-15T10:32:00Z"
+    },
+    "Tet McMillan": {
+      "note": "Rookie upside, good value pick",
+      "target": true,
+      "priority": "medium",
+      "position": "WR",
+      "last_updated": "2024-01-15T10:33:00Z"
+    }
+  },
+  "draft_specific_notes": {
+    "1255969792519569408": {
+      "Brian Thomas Jr.": {
+        "note": "Draft board specific note - high priority target",
+        "target": true,
+        "priority": "high"
+      }
+    }
+  }
+} 
