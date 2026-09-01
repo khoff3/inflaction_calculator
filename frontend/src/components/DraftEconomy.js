@@ -100,28 +100,52 @@ const DraftEconomy = ({ draftId, isLive }) => {
         background: '#fff',
         verticalAlign: 'top',
     };
-    // A concrete mid-range case reads faster than the whole ladder.
-    const example = economy.price_ladder.find(r => r.sheet === 30) || economy.price_ladder[0];
-    const half = economy.teams_detail.slice(0, Math.ceil(economy.teams_detail.length / 2));
-    const rest = economy.teams_detail.slice(Math.ceil(economy.teams_detail.length / 2));
+    // One row per team, in draft-slot order. Sorting by wallet would be more
+    // useful for a second and then unreadable: rows would reshuffle under the
+    // cursor every three seconds as bids land.
+    const teams = economy.teams_detail;
+    const topBid = Math.max(...teams.map((t) => t.max_bid));
+    const num = { textAlign: 'right' };
 
-    const teamTable = (rows) => (
+    const teamTable = (
         <Table bordered hover size="sm" style={{ ...tight, marginBottom: 0 }}>
             <thead>
-                <tr><th>Tm</th><th>Spent</th><th>Left</th><th>Open</th><th>Max</th><th>Needs</th></tr>
+                <tr>
+                    <th>Tm</th><th style={num}>Spent</th><th style={num}>Left</th>
+                    <th style={num}>Open</th><th style={num}>Max bid</th><th>Still needs</th>
+                </tr>
             </thead>
             <tbody>
-                {rows.map((team) => (
-                    <tr key={team.slot}>
-                        <td>{team.slot}</td>
-                        <td>{money(team.spent)}</td>
-                        <td>{money(team.remaining)}</td>
-                        <td>{team.slots_open}</td>
-                        <td><strong>{money(team.max_bid)}</strong></td>
-                        <td style={{ fontSize: '0.85em', opacity: 0.85 }}>{describeNeeds(team.needs)}</td>
-                    </tr>
-                ))}
+                {teams.map((team) => {
+                    const done = team.slots_open === 0;
+                    return (
+                        <tr key={team.slot} style={done ? { opacity: 0.45 } : undefined}>
+                            <td>{team.slot}</td>
+                            <td style={num}>{money(team.spent)}</td>
+                            <td style={num}>{money(team.remaining)}</td>
+                            <td style={num}>{team.slots_open}</td>
+                            {/* The wallet that can outbid everyone is the one
+                                number here you actually act on. */}
+                            <td style={{ ...num, background: team.max_bid === topBid && topBid > 0 ? '#fff3cd' : undefined }}>
+                                <strong>{money(team.max_bid)}</strong>
+                            </td>
+                            <td style={{ fontSize: '0.85em', opacity: 0.85 }}>
+                                {done ? <span style={{ opacity: 0.6 }}>full</span> : describeNeeds(team.needs)}
+                            </td>
+                        </tr>
+                    );
+                })}
             </tbody>
+            <tfoot>
+                <tr style={{ borderTop: '2px solid #adb5bd' }}>
+                    <td><strong>All</strong></td>
+                    <td style={num}>{money(economy.spent)}</td>
+                    <td style={num}>{money(economy.remaining)}</td>
+                    <td style={num}>{economy.slots_open}</td>
+                    <td style={num}>—</td>
+                    <td />
+                </tr>
+            </tfoot>
         </Table>
     );
 
@@ -216,8 +240,13 @@ const DraftEconomy = ({ draftId, isLive }) => {
                     </Table>
                 </div>
 
-                <div style={panel}>{teamTable(half)}</div>
-                <div style={panel}>{teamTable(rest)}</div>
+            </div>
+
+            <div style={{ ...panel, display: 'block', margin: '0 auto 0.75rem', width: 'fit-content' }}>
+                <div style={{ fontSize: '0.9em', marginBottom: '0.5rem' }}>
+                    <strong>Who can still buy what</strong>
+                </div>
+                {teamTable}
             </div>
 
             <p style={{ fontSize: '0.8em', opacity: 0.6, marginTop: '0.25rem' }}>
