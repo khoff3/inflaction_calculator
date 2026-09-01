@@ -16,6 +16,7 @@ from pydantic import BaseModel
 import uvicorn
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from starlette.concurrency import run_in_threadpool
 import time
 from collections import defaultdict
 import pickle
@@ -163,6 +164,7 @@ class DataManager:
             
             # Create optimized lookup tables
             self._create_lookup_tables()
+            self._build_board()
             
             logging.info(f"Static data loaded successfully for year {LATEST_YEAR}")
             
@@ -206,6 +208,54 @@ class DataManager:
                 'tier_name': tier_name
             }
     
+    def _build_board(self):
+        """Resolve every auction-value row to its tier once, at load.
+
+        This is the whole board with tiers attached, and none of it changes
+        during a draft - only which names are already taken. The available
+        players endpoint used to rebuild it per request, rescanning the ranking
+        frames and rerunning fuzzy matches for ~360 undrafted players every few
+        seconds, which cost about 450ms a call. Doing it once turns that into a
+        set difference.
+        """
+        auction_values = self._data_cache['auction_values_df']
+        tier_lookups = self._data_cache['positional_tier_lookups']
+        mappings = self._data_cache['player_mappings']
+        # Fuzzy matching needs the candidate list; build it per position rather
+        # than per player.
+        names_by_position = {pos: list(names) for pos, names in tier_lookups.items()}
+
+        board = []
+        for _, row in auction_values.iterrows():
+            name = str(row['Player'])
+            position = str(row['Position'])
+            lookup = tier_lookups.get(position, {})
+
+            tier = lookup.get(name)
+            if tier is None:
+                mapped = mappings.get(name, {}).get('tier_name')
+                if mapped:
+                    tier = lookup.get(mapped)
+            if tier is None and names_by_position.get(position):
+                match = process.extractOne(name, names_by_position[position], score_cutoff=80)
+                if match:
+                    tier = lookup.get(match[0])
+
+            value = to_dollars(row['Value']) if pd.notna(row['Value']) else 0.0
+            board.append({
+                'name': name,
+                'position': position,
+                'team': str(row.get('Team', 'N/A')),
+                'auction_value': value,
+                'expected_value': value,
+                'tier': 'N/A' if tier is None or pd.isna(tier) else str(tier),
+                'position_rank': str(row.get('Position Rank', 'N/A')),
+            })
+        board.sort(key=lambda p: p['auction_value'], reverse=True)
+        self._data_cache['board'] = board
+        self._data_cache['board_values'] = {p['name']: p['auction_value'] for p in board}
+        logging.info(f"Prebuilt board of {len(board)} players with tiers")
+
     def _create_draft_hash(self, draft_data: List[Dict[str, Any]]) -> str:
         """Create a hash of draft data to detect changes."""
         import hashlib
@@ -788,184 +838,73 @@ async def draft_economy(draft_id: str = Query(..., description="Sleeper draft ID
         raise HTTPException(status_code=500, detail="An error occurred while processing the request")
 
 
+def _assemble_available_players(draft_data):
+    """Split the prebuilt board into undrafted and drafted, with values attached.
+
+    Runs off the event loop (see the handler): even though the prebuilt board
+    makes this cheap, this endpoint is polled by every open tab and it is the
+    one place where per-request work scales with the size of the board.
+    """
+    board = data_manager._data_cache['board']
+    board_values = data_manager._data_cache['board_values']
+    mappings = data_manager._data_cache['player_mappings']
+
+    # A name counts as taken under its Sleeper spelling and its ETR one.
+    drafted = set()
+    for pick in draft_data:
+        meta = pick.get('metadata', {})
+        name = f"{meta.get('first_name', '')} {meta.get('last_name', '')}".strip()
+        drafted.add(name)
+        mapped = mappings.get(name, {}).get('auction_name')
+        if mapped:
+            drafted.add(mapped)
+
+    available_players = [p for p in board if p['name'] not in drafted]
+
+    drafted_players_with_values = []
+    for pick in draft_data:
+        meta = pick.get('metadata', {})
+        name = f"{meta.get('first_name', '')} {meta.get('last_name', '')}".strip()
+        spent = int(meta.get('amount', 0) or 0)
+        expected = board_values.get(name)
+        if expected is None:
+            mapped = mappings.get(name, {}).get('auction_name')
+            expected = board_values.get(mapped, 0.0) if mapped else 0.0
+        drafted_players_with_values.append({
+            'name': name,
+            'position': meta.get('position', 'N/A'),
+            'team': meta.get('team', 'N/A'),
+            'spent_amount': spent,
+            'expected_value': expected,
+            'difference': spent - expected,
+            'round': pick.get('round'),
+            'pick_no': pick.get('pick_no'),
+        })
+
+    return {
+        'available_players': available_players,
+        'drafted_players': drafted_players_with_values,
+        'total_available': len(available_players),
+        'total_drafted': len(drafted_players_with_values),
+    }
+
+
 @app.get("/available_players")
 async def get_available_players(draft_id: str, is_live: bool = False):
-    """Get available players (not yet drafted) with tiers and auction values."""
+    """Undrafted players with tiers and values, plus what has already gone."""
     try:
-        logging.info(f"Starting available players request for draft_id: {draft_id}")
-        
-        # Get draft data to see which players have been drafted
         draft_data = await data_manager.get_draft_data(draft_id)
-        logging.info(f"Retrieved {len(draft_data)} drafted players")
-        
-        # Get all players from auction values
-        auction_values_df = data_manager._data_cache.get('auction_values_df')
-        positional_rankings = data_manager._data_cache.get('positional_rankings', {})
-        
-        logging.info(f"Auction values df exists: {auction_values_df is not None}")
-        logging.info(f"Positional rankings keys: {list(positional_rankings.keys())}")
-        
-        if auction_values_df is None:
-            raise HTTPException(status_code=500, detail="Auction values data not loaded")
-        
-        # Create a set of drafted player names with fuzzy matching support
-        drafted_players = set()
-        drafted_player_variations = {}  # Store variations for fuzzy matching
-        
-        # Get player name mappings for better matching
-        player_mappings = data_manager._data_cache.get('player_mappings', {})
-        
-        for pick in draft_data:
-            player_name = f"{pick['metadata']['first_name']} {pick['metadata']['last_name']}"
-            drafted_players.add(player_name)
-            
-            # Add mapped variations from player_mappings
-            if player_name in player_mappings:
-                auction_name = player_mappings[player_name].get('auction_name', player_name)
-                drafted_players.add(auction_name)
-                logging.info(f"Added mapping: '{player_name}' -> '{auction_name}' to drafted players")
-            
-            # Store variations for fuzzy matching
-            # Add common variations like "Tetairoa McMillan" -> "Tet McMillan"
-            if player_name == "Tetairoa McMillan":
-                drafted_players.add("Tet McMillan")
-            elif player_name == "DeVonta Smith":
-                drafted_players.add("Devonta Smith")
-            elif player_name == "Tyrone Tracy":
-                drafted_players.add("Tyrone Tracy Jr.")
-            elif player_name == "Cameron Ward":
-                drafted_players.add("Cam Ward")
-            elif player_name == "Anthony Richardson Sr.":
-                drafted_players.add("Anthony Richardson")
-        
-        logging.info(f"Created set of {len(drafted_players)} drafted players (including variations)")
-        
-        # Get available players (not drafted)
-        available_players = []
-        
-        # Get player name mappings for better matching
-        player_mappings = data_manager._data_cache.get('player_mappings', {})
-        
-        for _, row in auction_values_df.iterrows():
-            player_name = str(row['Player'])
-            position = str(row['Position'])
-            auction_value = to_dollars(row['Value']) if pd.notna(row['Value']) else 0.0
-            position_rank = str(row.get('Position Rank', 'N/A'))
-            
-            # Skip if player has been drafted
-            if player_name in drafted_players:
-                continue
-            
-            # Get tier from positional rankings with improved matching
-            tier = 'N/A'
-            if position in positional_rankings:
-                ranking_df = positional_rankings[position]
-                
-                # Try exact match first
-                tier_row = ranking_df[ranking_df['PLAYER NAME'] == player_name]
-                
-                # If no exact match, try fuzzy matching
-                if tier_row.empty:
-                    # Get all player names from the ranking df
-                    ranking_player_names = ranking_df['PLAYER NAME'].tolist()
-                    
-                    # Use fuzzy matching to find the best match
-                    try:
-                        best_match = process.extractOne(player_name, ranking_player_names, score_cutoff=80)
-                        if best_match:
-                            matched_name, score = best_match
-                            if score >= 80:  # Only use if similarity is high enough
-                                tier_row = ranking_df[ranking_df['PLAYER NAME'] == matched_name]
-                                logging.info(f"Fuzzy matched '{player_name}' to '{matched_name}' (score: {score})")
-                    except Exception as e:
-                        logging.warning(f"Fuzzy matching failed for '{player_name}': {e}")
-                
-                # If still no match, try player mappings
-                if tier_row.empty and player_name in player_mappings:
-                    tier_name = player_mappings[player_name].get('tier_name', player_name)
-                    tier_row = ranking_df[ranking_df['PLAYER NAME'] == tier_name]
-                    if not tier_row.empty:
-                        logging.info(f"Mapped '{player_name}' to '{tier_name}' using player mappings")
-                
-                # Extract tier if found
-                if not tier_row.empty and 'TIERS' in ranking_df.columns:
-                    tier_value = tier_row['TIERS'].values[0]
-                    tier = str(tier_value) if pd.notna(tier_value) else 'N/A'
-            
-            # Check anomaly mappings (safely)
-            anomaly_mappings = data_manager._data_cache.get('anomaly_mappings', {})
-            positional_tier_lookups = data_manager._data_cache.get('positional_tier_lookups', {})
-            
-            if player_name in anomaly_mappings:
-                anomaly = anomaly_mappings[player_name]
-                tier_name = anomaly.get('tier_name', 'N/A')
-                if position in positional_tier_lookups:
-                    if tier_name in positional_tier_lookups[position]:
-                        tier = str(positional_tier_lookups[position][tier_name])
-            
-            available_players.append({
-                'name': player_name,
-                'position': position,
-                'team': str(row.get('Team', 'N/A')),
-                'auction_value': auction_value,
-                'expected_value': auction_value,  # For available players, EV = auction value
-                'tier': tier,
-                'position_rank': position_rank
-            })
-        
-        logging.info(f"Found {len(available_players)} available players")
-        
-        # Sort by auction value (highest first)
-        available_players.sort(key=lambda x: x['auction_value'], reverse=True)
-        
-        # Also get drafted players with their expected values
-        drafted_players_with_values = []
-        auction_values_dict = {}
-        
-        # Create a lookup dictionary for auction values
-        for _, row in auction_values_df.iterrows():
-            player_name = str(row['Player'])
-            auction_value = to_dollars(row['Value']) if pd.notna(row['Value']) else 0.0
-            auction_values_dict[player_name] = auction_value
-        
-        for pick in draft_data:
-            player_name = f"{pick['metadata']['first_name']} {pick['metadata']['last_name']}"
-            spent_amount = int(pick['metadata'].get('amount', 0))
-            
-            # Try to find expected value from auction values
-            expected_value = 0
-            if player_name in auction_values_dict:
-                expected_value = auction_values_dict[player_name]
-            else:
-                # Try player mappings
-                if player_name in player_mappings:
-                    auction_name = player_mappings[player_name].get('auction_name', player_name)
-                    if auction_name in auction_values_dict:
-                        expected_value = auction_values_dict[auction_name]
-            
-            drafted_players_with_values.append({
-                'name': player_name,
-                'position': pick['metadata']['position'],
-                'team': pick['metadata'].get('team', 'N/A'),
-                'spent_amount': spent_amount,
-                'expected_value': expected_value,
-                'pick_number': pick['pick_no'],
-                'round': pick['round']
-            })
-        
-        return {
-            'available_players': available_players,
-            'drafted_players': drafted_players_with_values,
-            'total_available': len(available_players),
-            'total_drafted': len(draft_data)
-        }
-        
+        if not draft_data:
+            raise HTTPException(status_code=404, detail="No draft data found")
+        # Off the event loop, so a slow assembly can never stall the ticker's
+        # requests the way a blocking async handler would.
+        return await run_in_threadpool(_assemble_available_players, draft_data)
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error getting available players: {e}")
-        logging.error(f"Exception type: {type(e)}")
-        import traceback
-        logging.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error getting available players: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred while processing the request")
+
 
 @app.get("/draft_notes")
 async def get_draft_notes():
