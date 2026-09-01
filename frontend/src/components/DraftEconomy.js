@@ -62,41 +62,66 @@ const DraftEconomy = ({ draftId, isLive }) => {
         : inflation < 0.95 ? 'moderate-negative'
         : 'neutral';
 
-    const stat = { display: 'inline-block', marginRight: '1.5rem', fontSize: '0.9em' };
-    const label = { opacity: 0.6, marginRight: '0.35rem' };
+    const stat = { display: 'inline-block', marginRight: '1.25rem', fontSize: '0.9em' };
+    const label = { opacity: 0.6, marginRight: '0.3rem' };
+    // Scoped width. The shared .centered-table class is width:100%, which
+    // stretches a nine-column ladder across the whole viewport and reads as
+    // sparse rather than compact, so these tables opt out of it.
+    const tight = { width: 'auto', fontSize: '0.85em', marginBottom: '0.5rem' };
+    const half = economy.teams_detail.slice(0, Math.ceil(economy.teams_detail.length / 2));
+    const rest = economy.teams_detail.slice(Math.ceil(economy.teams_detail.length / 2));
+
+    const teamTable = (rows) => (
+        <Table bordered hover size="sm" style={tight}>
+            <thead>
+                <tr><th>Tm</th><th>Spent</th><th>Left</th><th>Open</th><th>Max</th></tr>
+            </thead>
+            <tbody>
+                {rows.map((team) => (
+                    <tr key={team.slot}>
+                        <td>{team.slot}</td>
+                        <td>{money(team.spent)}</td>
+                        <td>{money(team.remaining)}</td>
+                        <td>{team.slots_open}</td>
+                        <td><strong>{money(team.max_bid)}</strong></td>
+                    </tr>
+                ))}
+            </tbody>
+        </Table>
+    );
 
     return (
-        <div>
-            <div style={{ marginBottom: '0.75rem' }}>
-                <span style={{ fontSize: '1.6em', fontWeight: 'bold' }} className={inflationClass}>
+        <div style={{ maxWidth: '720px' }}>
+            <div>
+                <span style={{ fontSize: '1.5em', fontWeight: 'bold' }} className={inflationClass}>
                     {inflation === null ? '—' : `${inflation.toFixed(2)}×`}
                 </span>
-                <span style={{ marginLeft: '0.6rem', opacity: 0.8 }}>
+                <span style={{ marginLeft: '0.5rem', opacity: 0.8, fontSize: '0.9em' }}>
                     on players over $1
                     {inflation !== null && (inflation > 1.02 ? ' — more cash than board'
                         : inflation < 0.98 ? ' — more board than cash' : ' — at par')}
                 </span>
             </div>
 
-            <div style={{ marginBottom: '0.75rem' }}>
-                <span style={stat}><span style={label}>left &gt;$1</span><strong>{economy.contested_players}</strong></span>
+            <div style={{ margin: '0.4rem 0' }}>
+                <span style={stat}><span style={label}>&gt;$1 left</span><strong>{economy.contested_players}</strong></span>
                 <span style={stat}><span style={label}>money</span><strong>{money(economy.spendable)}</strong></span>
                 <span style={stat}><span style={label}>value</span><strong>{money(economy.value_remaining)}</strong></span>
                 <span style={stat}><span style={label}>slots</span>{economy.slots_filled}/{economy.slots_filled + economy.slots_open}</span>
-                <span style={stat}><span style={label}>$1 filler</span>{economy.filler_slots}<span style={{ opacity: 0.5 }}> of ~{economy.typical_filler_slots}</span></span>
+                <span style={stat}><span style={label}>filler</span>{economy.filler_slots}<span style={{ opacity: 0.5 }}>/~{economy.typical_filler_slots}</span></span>
             </div>
 
-            <div style={{ marginBottom: '1rem' }}>
+            <div style={{ marginBottom: '0.6rem' }}>
                 {['QB', 'RB', 'WR', 'TE'].map((position) => (
                     <span key={position} style={stat}>
                         <span style={label}>{position}</span>
                         {money(economy.value_remaining_by_position?.[position] || 0)}
                     </span>
                 ))}
-                <span style={{ opacity: 0.5, fontSize: '0.85em' }}>value left by position</span>
+                <span style={{ opacity: 0.5, fontSize: '0.8em' }}>left by position</span>
             </div>
 
-            <Table bordered hover size="sm" className="centered-table" style={{ fontSize: '0.9em' }}>
+            <Table bordered hover size="sm" style={tight}>
                 <thead>
                     <tr><th>Sheet</th>{economy.price_ladder.map(r => <th key={r.sheet}>${r.sheet}</th>)}</tr>
                 </thead>
@@ -112,25 +137,13 @@ const DraftEconomy = ({ draftId, isLive }) => {
                 </tbody>
             </Table>
 
-            <Table bordered hover size="sm" className="centered-table" style={{ fontSize: '0.9em' }}>
-                <thead>
-                    <tr><th>Tm</th><th>Spent</th><th>Left</th><th>Slots</th><th>Max Bid</th></tr>
-                </thead>
-                <tbody>
-                    {economy.teams_detail.map((team) => (
-                        <tr key={team.slot}>
-                            <td>{team.slot}</td>
-                            <td>{money(team.spent)}</td>
-                            <td>{money(team.remaining)}</td>
-                            <td>{team.slots_open}</td>
-                            <td><strong>{money(team.max_bid)}</strong></td>
-                        </tr>
-                    ))}
-                </tbody>
-            </Table>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                {teamTable(half)}
+                {teamTable(rest)}
+            </div>
 
-            <p style={{ fontSize: '0.8em', opacity: 0.6 }}>
-                $1 players excluded from both sides — a third of picks here, 2.6% of dollars.
+            <p style={{ fontSize: '0.78em', opacity: 0.6, marginTop: '0.25rem' }}>
+                $1 players excluded both sides — a third of picks here, 2.6% of dollars.
             </p>
         </div>
     );
