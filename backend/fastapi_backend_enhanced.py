@@ -74,6 +74,13 @@ LEAGUE_TEAMS = 12
 LEAGUE_BUDGET = 200
 ROSTER_SLOTS = 16
 
+# Measured over this league's 60 team-seasons (2021-2025, stag_drafts):
+# $1 buys are 33% of all picks but only 2.6% of all dollars, and every roster
+# ends up with 5.2 of them on average (median 5, range 0-10). They are roster
+# filler rather than a market - including them in an inflation figure just
+# drags it toward 1.0 and hides what the contested players are doing.
+TYPICAL_DOLLAR_SLOTS_PER_ROSTER = 5.2
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -474,20 +481,24 @@ class DataManager:
         slots_open = sum(t['slots_open'] for t in teams)
         spendable = max(remaining_total - slots_open, 0)
 
-        undrafted = []
+        # Only players worth more than a dollar get bid on. The $1 tail is
+        # filler every roster takes regardless of the market, so it belongs on
+        # neither side of an inflation ratio.
+        contested = []
         by_position = defaultdict(float)
         for _, row in auction_values.iterrows():
             if str(row['Player']) in drafted:
                 continue
             value = to_dollars(row['Value'])
-            if value > 0:
-                undrafted.append((value, str(row['Position'])))
-        undrafted.sort(reverse=True)
-        # Only as many players as there are seats left can still be bought.
-        buyable = undrafted[:slots_open] if slots_open else []
+            if value > 1:
+                contested.append((value, str(row['Position'])))
+        contested.sort(reverse=True)
+        # No more of them can be bought than there are seats left.
+        buyable = contested[:slots_open] if slots_open else []
         for value, position in buyable:
             by_position[position] += value - 1
         value_remaining = sum(value - 1 for value, _ in buyable)
+        filler_slots = max(slots_open - len(buyable), 0)
 
         return {
             'teams': LEAGUE_TEAMS,
@@ -500,13 +511,27 @@ class DataManager:
             'slots_open': slots_open,
             'spendable': spendable,
             'value_remaining': round(value_remaining, 1),
-            'players_buyable': len(buyable),
+            'contested_players': len(buyable),
+            'filler_slots': filler_slots,
+            'typical_filler_slots': round(TYPICAL_DOLLAR_SLOTS_PER_ROSTER * LEAGUE_TEAMS),
             # >1 means the room has more cash than board: everything left goes
             # over sheet. <1 means bargains are coming.
             'inflation': round(spendable / value_remaining, 3) if value_remaining > 0 else None,
             'value_remaining_by_position': {k: round(v, 1) for k, v in sorted(by_position.items())},
+            'price_ladder': self._price_ladder(
+                spendable / value_remaining if value_remaining > 0 else None),
             'teams_detail': teams,
         }
+
+    @staticmethod
+    def _price_ladder(multiplier, rungs=(2, 5, 10, 20, 30, 40, 50, 60)):
+        # A bare multiplier is hard to bid against. Every player costs a dollar
+        # regardless of the market, so only the amount above that floor
+        # inflates: expected = 1 + (sheet - 1) * multiplier.
+        if multiplier is None:
+            return []
+        return [{'sheet': rung, 'expected': round(1 + (rung - 1) * multiplier, 1)}
+                for rung in rungs]
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
