@@ -81,6 +81,8 @@ const EnhancedTicker = ({ draftId, draftOrder = [], isLive }) => {
         tier: []
     });
     const [loading, setLoading] = useState(false);
+    // Pick count at the last successful fetch, used to skip no-op refreshes.
+    const lastPickCount = useRef(null);
     const [error, setError] = useState(null);
     const [lastUpdate, setLastUpdate] = useState(null);
 
@@ -178,6 +180,25 @@ const EnhancedTicker = ({ draftId, draftOrder = [], isLive }) => {
                 setLastUpdate(new Date(timestamp));
                 return;
             }
+        }
+
+        // Nothing has sold since the last poll? Then every downstream setState
+        // would hand React identical data under new object identities, which is
+        // a full re-render of the lot list for no reason. The backend already
+        // exposes a cheap count for exactly this.
+        try {
+            const { data: count } = await axios.get(
+                `http://localhost:5050/picks/count?draft_id=${draftId}`
+            );
+            const pickCount = typeof count === 'object' ? count.count : count;
+            if (lastPickCount.current !== null && Number(pickCount) === lastPickCount.current) {
+                return;
+            }
+            lastPickCount.current = Number(pickCount);
+        } catch (countError) {
+            // The count endpoint is an optimization, not a requirement — if it
+            // fails, fall through and fetch normally.
+            console.debug('picks/count unavailable, fetching in full', countError);
         }
 
         setLoading(true);

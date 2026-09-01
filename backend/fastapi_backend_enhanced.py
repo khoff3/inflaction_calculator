@@ -68,6 +68,13 @@ def to_dollars(raw_value) -> float:
         return 0.0
 
 
+# League shape. Matches the real Sleeper league; the $200 also appears in
+# team_breakdown, which predates these constants.
+LEAGUE_TEAMS = 12
+LEAGUE_BUDGET = 200
+ROSTER_SLOTS = 16
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Fantasy Football Inflation Calculator API (Enhanced)",
@@ -408,6 +415,99 @@ class DataManager:
             'positional_data': dict(positional_data)
         }
     
+    def get_draft_economy(self, draft_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Forward-looking auction state: money left against value left.
+
+        Everything else in this app is backward-looking - it reports what has
+        already been paid. The number you bid against is the other one: how much
+        cash is still in the room versus how much value is still on the board.
+
+        Two details decide whether that number is honest:
+
+        * Every open roster slot needs a dollar, so a team's spendable money is
+          its budget minus its remaining slots, not its remaining balance. The
+          same reserve applies league-wide. Ignore it and the multiplier runs
+          away exactly in the endgame, when it matters most.
+        * Only as many players as there are open slots can still be bought, so
+          the value pool is the top N undrafted players, not the whole sheet.
+          Summing all 450-odd would understate inflation badly.
+
+        Both sides are measured above the $1 floor so they are comparable.
+        """
+        auction_values = self._data_cache['auction_values_df']
+        mappings = self._data_cache['player_mappings']
+
+        drafted = set()
+        spend_by_slot = defaultdict(int)
+        picks_by_slot = defaultdict(int)
+        for pick in draft_data:
+            meta = pick.get('metadata', {})
+            name = f"{meta.get('first_name', '')} {meta.get('last_name', '')}".strip()
+            drafted.add(name)
+            mapped = mappings.get(name, {}).get('auction_name')
+            if mapped:
+                drafted.add(mapped)
+            slot = pick.get('draft_slot')
+            if slot is not None:
+                spend_by_slot[slot] += int(meta.get('amount', 0))
+                picks_by_slot[slot] += 1
+
+        slots = sorted(spend_by_slot) or list(range(1, LEAGUE_TEAMS + 1))
+        slots = sorted(set(slots) | set(range(1, LEAGUE_TEAMS + 1)))
+
+        teams = []
+        for slot in slots:
+            spent = spend_by_slot.get(slot, 0)
+            filled = picks_by_slot.get(slot, 0)
+            open_slots = max(ROSTER_SLOTS - filled, 0)
+            remaining = LEAGUE_BUDGET - spent
+            # Hold back a dollar for every slot after the one being bid on.
+            max_bid = max(remaining - max(open_slots - 1, 0), 0) if open_slots else 0
+            teams.append({
+                'slot': slot, 'spent': spent, 'remaining': remaining,
+                'slots_filled': filled, 'slots_open': open_slots, 'max_bid': max_bid,
+            })
+
+        total_pot = LEAGUE_TEAMS * LEAGUE_BUDGET
+        spent_total = sum(t['spent'] for t in teams)
+        remaining_total = total_pot - spent_total
+        slots_open = sum(t['slots_open'] for t in teams)
+        spendable = max(remaining_total - slots_open, 0)
+
+        undrafted = []
+        by_position = defaultdict(float)
+        for _, row in auction_values.iterrows():
+            if str(row['Player']) in drafted:
+                continue
+            value = to_dollars(row['Value'])
+            if value > 0:
+                undrafted.append((value, str(row['Position'])))
+        undrafted.sort(reverse=True)
+        # Only as many players as there are seats left can still be bought.
+        buyable = undrafted[:slots_open] if slots_open else []
+        for value, position in buyable:
+            by_position[position] += value - 1
+        value_remaining = sum(value - 1 for value, _ in buyable)
+
+        return {
+            'teams': LEAGUE_TEAMS,
+            'budget_per_team': LEAGUE_BUDGET,
+            'roster_slots': ROSTER_SLOTS,
+            'total_pot': total_pot,
+            'spent': spent_total,
+            'remaining': remaining_total,
+            'slots_filled': sum(t['slots_filled'] for t in teams),
+            'slots_open': slots_open,
+            'spendable': spendable,
+            'value_remaining': round(value_remaining, 1),
+            'players_buyable': len(buyable),
+            # >1 means the room has more cash than board: everything left goes
+            # over sheet. <1 means bargains are coming.
+            'inflation': round(spendable / value_remaining, 3) if value_remaining > 0 else None,
+            'value_remaining_by_position': {k: round(v, 1) for k, v in sorted(by_position.items())},
+            'teams_detail': teams,
+        }
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
         return {
@@ -644,6 +744,21 @@ async def scatter_data(draft_id: str = Query(..., description="Sleeper draft ID"
     except Exception as e:
         logging.error(f"Error processing scatter data request: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@app.get("/draft_economy")
+async def draft_economy(draft_id: str = Query(..., description="Sleeper draft ID")):
+    """Money left in the room against value left on the board."""
+    try:
+        draft_data = await data_manager.get_draft_data(draft_id)
+        if not draft_data:
+            raise HTTPException(status_code=404, detail="No draft data found")
+        return data_manager.get_draft_economy(draft_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error computing draft economy for {draft_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred while processing the request")
+
 
 @app.get("/available_players")
 async def get_available_players(draft_id: str, is_live: bool = False):

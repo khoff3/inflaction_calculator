@@ -341,7 +341,10 @@ const AvailablePlayers = ({ draftId, isLive }) => {
         label: `Tier ${i + 1}`
     }));
 
-    if (loading) {
+    // Only blank the screen before there is anything to show. Gating on `loading`
+    // alone tore the whole table down on every poll, resetting scroll, sort and
+    // filters several times a minute.
+    if (loading && allPlayers.length === 0) {
         return (
             <div style={{ textAlign: 'center', padding: '2rem' }}>
                 <div style={{ 
