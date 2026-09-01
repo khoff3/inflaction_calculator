@@ -116,8 +116,10 @@ class DataManager:
         self._player_lookup_cache = {}
         self._inflation_cache = {}
         self._cache_timestamps = {}
-        self._cache_ttl = 300  # 5 minutes TTL
-        self._draft_cache_ttl = 5  # 5 seconds for draft data (more responsive for live drafts)
+        # Ceiling only — inflation is also invalidated whenever the draft changes,
+        # so this bounds staleness during idle stretches, not during live bidding.
+        self._cache_ttl = 300
+        self._draft_cache_ttl = 2  # live drafts move fast; this is the freshness floor
         self._lock = asyncio.Lock()
         
         # Pre-load static data
@@ -312,29 +314,42 @@ class DataManager:
         return auction_value, tier
     
     async def get_inflation_data(self, draft_id: str) -> Dict[str, Any]:
-        """Get inflation data with caching."""
+        """Get inflation data, recomputed as soon as a pick lands.
+
+        The draft is fetched first, outside the lock, for two reasons. It is
+        cheap - get_draft_data has its own short-TTL cache - and it yields the
+        current draft hash, which is what decides whether the cached inflation
+        is still true. Time alone is not a safe test here: a pick can land a
+        second after the cache is written, and a purely clock-based TTL would go
+        on serving pre-pick numbers for the rest of the window. During a live
+        auction that is the one number nobody can afford to have be stale.
+
+        Fetching outside the lock also avoids a deadlock: asyncio.Lock is not
+        reentrant, and get_draft_data acquires this same lock whenever its own
+        cache misses.
+        """
         cache_key = f"inflation_{draft_id}"
-        
-        # Check cache first
+        hash_key = f"inflation_draft_hash_{draft_id}"
+
+        draft_data = await self.get_draft_data(draft_id)
+        if not draft_data:
+            raise HTTPException(status_code=404, detail="No draft data found")
+        draft_hash = self._create_draft_hash(draft_data)
+
         if cache_key in self._inflation_cache:
-            timestamp = self._cache_timestamps.get(cache_key, 0)
-            if time.time() - timestamp < self._cache_ttl:
+            age = time.time() - self._cache_timestamps.get(cache_key, 0)
+            if age < self._cache_ttl and self._data_cache.get(hash_key) == draft_hash:
                 logging.info(f"Returning cached inflation data for {draft_id}")
                 return self._inflation_cache[cache_key]
-        
-        # Calculate fresh data
+            if self._data_cache.get(hash_key) != draft_hash:
+                logging.info(f"Draft changed for {draft_id}, recalculating inflation")
+
         async with self._lock:
-            draft_data = await self.get_draft_data(draft_id)
-            if not draft_data:
-                raise HTTPException(status_code=404, detail="No draft data found")
-            
-            # Calculate inflation rates
             inflation_data = self._calculate_inflation_rates_optimized(draft_data)
-            
-            # Cache the result
             self._inflation_cache[cache_key] = inflation_data
             self._cache_timestamps[cache_key] = time.time()
-            
+            self._data_cache[hash_key] = draft_hash
+
             logging.info(f"Calculated and cached inflation data for {draft_id}")
             return inflation_data
     

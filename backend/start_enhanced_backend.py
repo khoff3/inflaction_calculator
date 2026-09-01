@@ -48,8 +48,8 @@ if __name__ == "__main__":
     print()
     
     print("⚡ Enhanced Features:")
-    print("   • 5-minute cache TTL for inflation data")
-    print("   • 30-second cache TTL for draft data")
+    print("   • Inflation recalculated whenever the draft changes (5-minute idle ceiling)")
+    print("   • 2-second cache TTL for draft data")
     print("   • Optimized player lookups")
     print("   • Memory-efficient data structures")
     print("   • Real-time performance monitoring")
