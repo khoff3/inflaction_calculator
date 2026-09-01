@@ -159,21 +159,14 @@ const InflationData = ({ draftId, isLive }) => {
                     const playerLookup = lookup[player.name];
                     let tier = 'N/A';
                     
-                    // Use FantasyPros tier from backend, fallback to expected value only if needed
+                    // FantasyPros tier only. The old fallback bucketed untiered
+                    // players by price into '1'..'9', which are not FantasyPros
+                    // tiers - a $60 player with no ranking landed in tier 1
+                    // beside genuine tier-1s and quietly moved that row's
+                    // percentage. Untiered players now sit in their own bucket
+                    // where they are visible instead of contaminating a real tier.
                     if (playerLookup && playerLookup.tier && playerLookup.tier !== 'N/A') {
-                        tier = playerLookup.tier.toString(); // Ensure it's a string
-                    } else {
-                        // Fallback to expected value-based tiering only if no FantasyPros tier found
-                        const expectedValue = parseFloat(player.expected);
-                        if (expectedValue >= 50) tier = '1';
-                        else if (expectedValue >= 30) tier = '2';
-                        else if (expectedValue >= 20) tier = '3';
-                        else if (expectedValue >= 15) tier = '4';
-                        else if (expectedValue >= 10) tier = '5';
-                        else if (expectedValue >= 5) tier = '6';
-                        else if (expectedValue >= 3) tier = '7';
-                        else if (expectedValue >= 1) tier = '8';
-                        else tier = '9';
+                        tier = playerLookup.tier.toString();
                     }
                     
                     if (!tieredInflation[position][tier]) {
@@ -276,6 +269,25 @@ const InflationData = ({ draftId, isLive }) => {
         };
     }, [draftId, isLive]);
 
+    /**
+     * Tiers to render for a position: whichever ones actually have picks.
+     *
+     * This used to be a hardcoded 1..10. FantasyPros publishes up to 16 tiers
+     * depending on position and year, so every pick below tier 10 was computed
+     * and then silently dropped from the table. 'N/A' sorts last so untiered
+     * players stay visible rather than disappearing.
+     */
+    const tiersFor = (positionTiers) => {
+        if (!positionTiers) return [];
+        return Object.keys(positionTiers).sort((a, b) => {
+            const na = parseInt(a, 10);
+            const nb = parseInt(b, 10);
+            if (Number.isNaN(na)) return 1;
+            if (Number.isNaN(nb)) return -1;
+            return na - nb;
+        });
+    };
+
     const getColorClass = (value) => {
         if (value > 15) return 'severe-positive';
         if (value > 10) return 'moderate-positive';
@@ -361,8 +373,8 @@ const InflationData = ({ draftId, isLive }) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {Array.from({ length: 10 }, (_, i) => i + 1).map((tier) => {
-                                        const tierData = inflationData.tieredInflation[position]?.[tier] || inflationData.tieredInflation[position]?.[tier.toString()];
+                                    {tiersFor(inflationData.tieredInflation[position]).map((tier) => {
+                                        const tierData = inflationData.tieredInflation[position]?.[tier];
                                         return (
                                             <tr key={tier}>
                                                 <td>{tier}</td>
