@@ -1,5 +1,4 @@
-// jest-dom adds custom jest matchers for asserting on DOM nodes.
-// allows you to do things like:
-// expect(element).toHaveTextContent(/react/i)
-// learn more: https://github.com/testing-library/jest-dom
-import '@testing-library/jest-dom';
+// Left empty on purpose. This file shipped from create-react-app importing
+// @testing-library/jest-dom, which was never added to package.json, so any
+// npm test run died here before reaching a test. Nothing in this app asserts
+// on DOM nodes yet; add the dependency alongside the first test that needs it.
