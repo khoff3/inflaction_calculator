@@ -68,6 +68,8 @@ const DraftEconomy = ({ draftId, isLive }) => {
     // stretches a nine-column ladder across the whole viewport and reads as
     // sparse rather than compact, so these tables opt out of it.
     const tight = { width: 'auto', margin: '0 auto 0.6rem', fontSize: '0.9em' };
+    // A concrete mid-range case reads faster than the whole ladder.
+    const example = economy.price_ladder.find(r => r.sheet === 30) || economy.price_ladder[0];
     const half = economy.teams_detail.slice(0, Math.ceil(economy.teams_detail.length / 2));
     const rest = economy.teams_detail.slice(Math.ceil(economy.teams_detail.length / 2));
 
@@ -121,13 +123,25 @@ const DraftEconomy = ({ draftId, isLive }) => {
                 <span style={{ opacity: 0.5, fontSize: '0.8em' }}>left by position</span>
             </div>
 
+            <div style={{ fontSize: '0.9em', marginBottom: '0.2rem' }}>
+                <strong>What players are actually going for</strong>
+                {example && (
+                    <span style={{ opacity: 0.7 }}>
+                        {' '}— a {money(example.sheet)} player on the sheet is going for about{' '}
+                        {money(example.expected)}
+                    </span>
+                )}
+            </div>
             <Table bordered hover size="sm" style={tight}>
                 <thead>
-                    <tr><th>Sheet</th>{economy.price_ladder.map(r => <th key={r.sheet}>${r.sheet}</th>)}</tr>
+                    <tr>
+                        <th style={{ textAlign: 'right' }}>ETR value</th>
+                        {economy.price_ladder.map(r => <th key={r.sheet}>${r.sheet}</th>)}
+                    </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td style={{ opacity: 0.6 }}>Pays</td>
+                        <td style={{ opacity: 0.6, textAlign: 'right' }}>Expect to pay</td>
                         {economy.price_ladder.map(r => (
                             <td key={r.sheet} className={getDeltaClass(r.expected - r.sheet)}>
                                 <strong>${r.expected}</strong>
