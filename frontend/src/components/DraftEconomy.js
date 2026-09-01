@@ -11,12 +11,33 @@ import dataService from './utils/DataService';
  * by value still buyable. Above 1.00 everything left goes over sheet; below it,
  * bargains are coming.
  */
+const getSqueezeClass = (vsBoard) => {
+    if (vsBoard === null || vsBoard === undefined) return 'neutral';
+    if (vsBoard > 1.4) return 'severe-positive';
+    if (vsBoard > 1.1) return 'moderate-positive';
+    if (vsBoard < 0.7) return 'severe-negative';
+    if (vsBoard < 0.9) return 'moderate-negative';
+    return 'neutral';
+};
+
 const getDeltaClass = (delta) => {
     if (delta > 3) return 'severe-positive';
     if (delta > 1) return 'moderate-positive';
     if (delta < -3) return 'severe-negative';
     if (delta < -1) return 'moderate-negative';
     return 'neutral';
+};
+
+// A team's open starter slots, shortest readable form: "RB WR2". Fractions
+// come from the flex, which is split across the positions that can fill it -
+// they round to whole seats here because half a slot means nothing at a table.
+const describeNeeds = (needs) => {
+    if (!needs) return '';
+    return ['QB', 'RB', 'WR', 'TE']
+        .map((position) => [position, Math.round(needs[position] || 0)])
+        .filter(([, slots]) => slots > 0)
+        .map(([position, slots]) => (slots > 1 ? `${position}${slots}` : position))
+        .join(' ');
 };
 
 const DraftEconomy = ({ draftId, isLive }) => {
@@ -87,7 +108,7 @@ const DraftEconomy = ({ draftId, isLive }) => {
     const teamTable = (rows) => (
         <Table bordered hover size="sm" style={{ ...tight, marginBottom: 0 }}>
             <thead>
-                <tr><th>Tm</th><th>Spent</th><th>Left</th><th>Open</th><th>Max</th></tr>
+                <tr><th>Tm</th><th>Spent</th><th>Left</th><th>Open</th><th>Max</th><th>Needs</th></tr>
             </thead>
             <tbody>
                 {rows.map((team) => (
@@ -97,6 +118,7 @@ const DraftEconomy = ({ draftId, isLive }) => {
                         <td>{money(team.remaining)}</td>
                         <td>{team.slots_open}</td>
                         <td><strong>{money(team.max_bid)}</strong></td>
+                        <td style={{ fontSize: '0.85em', opacity: 0.85 }}>{describeNeeds(team.needs)}</td>
                     </tr>
                 ))}
             </tbody>
@@ -137,6 +159,38 @@ const DraftEconomy = ({ draftId, isLive }) => {
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start' }}>
+                <div style={panel}>
+                    <div style={{ fontSize: '0.9em', marginBottom: '0.5rem' }}>
+                        <strong>Where the money has to go</strong>
+                    </div>
+                    <Table bordered hover size="sm" style={{ ...tight, marginBottom: 0 }}>
+                        <thead>
+                            <tr>
+                                <th>Pos</th><th>Left</th><th>Teams<br />needing</th>
+                                <th>Next<br />costs</th><th>vs board</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {(economy.positions || []).map((row) => (
+                                <tr key={row.position}>
+                                    <td><strong>{row.position}</strong></td>
+                                    <td>{row.sold_out ? <span style={{ opacity: 0.6 }}>none</span> : row.players}</td>
+                                    <td>{row.needy_teams}</td>
+                                    <td>{row.expected_next === null ? '—' : <strong>${row.expected_next}</strong>}</td>
+                                    <td className={getSqueezeClass(row.vs_board)}>
+                                        {row.vs_board === null ? '—' : `${row.vs_board.toFixed(2)}×`}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </Table>
+                    <div style={{ fontSize: '0.75em', opacity: 0.6, marginTop: '0.35rem', maxWidth: '15rem' }}>
+                        Money still pointed at each position over the value left
+                        there, against the board as a whole. Over 1.00× is where
+                        demand outruns supply.
+                    </div>
+                </div>
+
                 <div style={panel}>
                     <div style={{ fontSize: '0.9em', marginBottom: '0.5rem' }}>
                         <strong>What players are going for</strong>

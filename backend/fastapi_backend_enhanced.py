@@ -2,6 +2,7 @@ import pandas as pd
 import requests
 import json
 import numpy as np
+import math
 import os
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -73,14 +74,38 @@ def to_dollars(raw_value) -> float:
 # team_breakdown, which predates these constants.
 LEAGUE_TEAMS = 12
 LEAGUE_BUDGET = 200
-ROSTER_SLOTS = 16
+# 2026 dropped the kicker slot. The roster stayed 16 deep, so that seat became
+# bench; ROSTER_SLOTS overrides it if the league shortened the roster instead.
+ROSTER_SLOTS = int(os.environ.get('ROSTER_SLOTS', 16))
+
+# Kickers are not rostered in 2026, so they are dropped from the board entirely
+# rather than sitting there as undraftable value. They were worth $1 of
+# contested value on the whole sheet, so nothing downstream moves.
+UNROSTERED_POSITIONS = {'K'}
 
 # Measured over this league's 60 team-seasons (2021-2025, stag_drafts):
 # $1 buys are 33% of all picks but only 2.6% of all dollars, and every roster
 # ends up with 5.2 of them on average (median 5, range 0-10). They are roster
 # filler rather than a market - including them in an inflation figure just
 # drags it toward 1.0 and hides what the contested players are doing.
-TYPICAL_DOLLAR_SLOTS_PER_ROSTER = 5.2
+# One of those 5.2 was the kicker, which 2026 no longer rosters.
+TYPICAL_DOLLAR_SLOTS_PER_ROSTER = 4.2
+
+# Starter slots that cost real money. DEF is a starter too but is $1 filler by
+# construction (it averages $1.2 a pick here), so it generates no contested
+# demand and is left out of the need model; K is no longer rostered at all.
+STARTER_SLOTS = {'QB': 1, 'RB': 2, 'WR': 3, 'TE': 1}
+FLEX_SLOTS = 1
+FLEX_POSITIONS = ('RB', 'WR', 'TE')
+
+# Also measured over the 60 team-seasons, and used only to split an open FLEX
+# across the three positions that can fill it:
+#   pos   $/team   share  picks/team  $/pick
+#    QB     16.7    8.4%        1.5     11.1
+#    RB     88.6   44.4%        5.0     17.9
+#    WR     77.5   38.9%        6.0     12.8
+#    TE     14.0    7.0%        1.4     10.2
+HISTORICAL_SPEND_SHARE = {'QB': 0.084, 'RB': 0.444, 'WR': 0.389, 'TE': 0.070}
 
 
 # Initialize FastAPI app
@@ -122,6 +147,154 @@ class DraftIdRequest(BaseModel):
     draft_id: str
 
 # Enhanced Memory Management and Caching
+def _unmet_needs(roster):
+    """Starter slots this team still has to fill, in fractional slots.
+
+    The FLEX is the only awkward part. It is covered by whatever spills over
+    from RB/WR/TE, so it only creates demand once a team has no surplus - and
+    when it does, that demand is not attached to any one position. Splitting it
+    across RB/WR/TE by their historical spend share is the honest reading: a
+    team with an open flex shops all three, but bids like a room that puts
+    44 cents of every dollar into RBs.
+
+    Bench slots are deliberately not need. A bench pick is discretionary
+    best-available, which the money model handles separately - counting six
+    bench seats as demand at every position would swamp the starter signal.
+    """
+    needs = {}
+    surplus = 0.0
+    for position, required in STARTER_SLOTS.items():
+        have = roster.get(position, 0)
+        needs[position] = float(max(required - have, 0))
+        if position in FLEX_POSITIONS:
+            surplus += max(have - required, 0)
+
+    flex_open = max(FLEX_SLOTS - surplus, 0)
+    if flex_open:
+        weight_total = sum(HISTORICAL_SPEND_SHARE[p] for p in FLEX_POSITIONS)
+        for position in FLEX_POSITIONS:
+            needs[position] += flex_open * HISTORICAL_SPEND_SHARE[position] / weight_total
+    return needs
+
+
+def _positional_market(teams, buyable, spendable):
+    """Where the room's remaining money is pointed, position by position.
+
+    The headline multiplier treats the board as one market. It isn't. Twelve
+    teams each fill a fixed roster shape, so when eight of them still need a WR
+    and the WRs worth having have thinned out, that money has nowhere else to
+    go and WR prices run over sheet while another position sits at par.
+
+    Each team's spendable cash is split across the positions it still needs,
+    weighted by the going rate there - the average price of the players who
+    would actually fill those open slots. Weighting by a historical dollars-per-
+    slot constant instead was the first attempt and it was wrong twice over: it
+    started every draft off parity (reporting this room's chronic QB overspend
+    rather than anything happening now), and in the endgame it pointed a whole
+    wallet at a position whose last three players cost $2. A live going rate
+    does neither, and it moves the way the effect being modelled moves - as a
+    position thins out, the slots still needing filling stay put while the
+    value behind them drains.
+
+    A team with its starters already set is not out of the market; its money is
+    best-available, so it follows the value still on the board.
+
+    Every spendable dollar is allocated exactly once and the supply side is the
+    same pool the headline uses, so these multipliers average to the headline
+    number. Read them against it, not against 1.0.
+    """
+    avail = defaultdict(list)          # descending, buyable is already sorted
+    value_by_position = defaultdict(float)
+    for value, position in buyable:
+        avail[position].append(value)
+        value_by_position[position] += value - 1
+
+    needy_teams = defaultdict(int)
+    open_starters = defaultdict(float)
+    for team in teams:
+        for position, slots in team['needs'].items():
+            if position in STARTER_SLOTS:
+                open_starters[position] += slots
+                if slots > 0 and team['slots_open'] > 0:
+                    needy_teams[position] += 1
+
+    # What it costs to fill one of those slots: the mean price of the top N
+    # available, N being how many the league still has to fill. For WR that
+    # averages forty-odd players deep and for QB a dozen, which is the point -
+    # each position is priced at its own depth, not at its top.
+    going_rate = {}
+    for position in STARTER_SLOTS:
+        values = avail.get(position, [])
+        if not values:
+            going_rate[position] = 0.0
+            continue
+        depth = min(len(values), max(1, int(math.ceil(open_starters.get(position, 0)))))
+        going_rate[position] = sum(values[:depth]) / depth
+
+    demand = defaultdict(float)
+    for team in teams:
+        wallet = team['spendable']
+        if wallet <= 0:
+            continue
+        weights = {p: team['needs'].get(p, 0.0) * going_rate[p] for p in STARTER_SLOTS}
+        total = sum(weights.values())
+        if total <= 0:
+            weights = {p: value_by_position.get(p, 0.0) for p in STARTER_SLOTS}
+            total = sum(weights.values())
+        if total <= 0:
+            continue
+        for position, weight in weights.items():
+            demand[position] += wallet * weight / total
+
+    # Per-team spendable sums to the league figure in any draft Sleeper would
+    # allow, since it caps a bid at what leaves a dollar for each open slot.
+    # Scale anyway so the claim above - that these average to the headline -
+    # holds whatever the data does.
+    allocated = sum(demand.values())
+    scale = spendable / allocated if allocated > 0 else 0.0
+
+    # Nobody can pay more than the richest wallet in the room, which is the
+    # only hard ceiling on a price. It is what keeps the endgame readable: when
+    # seven teams still need a TE and one is left, the multiplier is 20x and
+    # meaningless, but the price it implies is just "whatever the biggest stack
+    # left will go to".
+    ceiling = max((t['max_bid'] for t in teams), default=0)
+
+    rows = []
+    for position in STARTER_SLOTS:
+        supply = value_by_position.get(position, 0.0)
+        money = demand.get(position, 0.0) * scale
+        rows.append({
+            'position': position,
+            'demand': round(money, 1),
+            'supply': round(supply, 1),
+            'players': len(avail.get(position, [])),
+            'going_rate': round(going_rate[position], 1),
+            'needy_teams': needy_teams.get(position, 0),
+            'open_starters': round(open_starters.get(position, 0.0), 1),
+            # Nobody left worth bidding on, and teams that still need one.
+            'sold_out': not avail.get(position) and needy_teams.get(position, 0) > 0,
+            'multiplier': round(money / supply, 3) if supply > 0 else None,
+            # What the next starter at this position actually costs: the going
+            # rate marked up by the position's own multiplier, above the $1
+            # floor every player costs regardless, and capped by the wallet.
+            'expected_next': (
+                round(min(1 + (going_rate[position] - 1) * money / supply, ceiling), 1)
+                if supply > 0 and going_rate[position] > 0 else None),
+        })
+
+    # Rank by how hot each position is relative to the board, which is what
+    # tells you where to buy now and where to wait.
+    board_money = sum(r['demand'] for r in rows)
+    board_supply = sum(r['supply'] for r in rows)
+    board = board_money / board_supply if board_supply > 0 else None
+    for row in rows:
+        row['vs_board'] = (round(row['multiplier'] / board, 3)
+                           if board and row['multiplier'] is not None else None)
+    rows.sort(key=lambda r: (r['multiplier'] is None, -(r['multiplier'] or 0)))
+    return rows
+
+
 class DataManager:
     """Centralized data manager with caching and memory optimization."""
     
@@ -228,7 +401,9 @@ class DataManager:
         board = []
         for _, row in auction_values.iterrows():
             name = str(row['Player'])
-            position = str(row['Position'])
+            position = str(row['Position']).upper()
+            if position in UNROSTERED_POSITIONS:
+                continue
             lookup = tier_lookups.get(position, {})
 
             tier = lookup.get(name)
@@ -494,12 +669,12 @@ class DataManager:
 
         Both sides are measured above the $1 floor so they are comparable.
         """
-        auction_values = self._data_cache['auction_values_df']
         mappings = self._data_cache['player_mappings']
 
         drafted = set()
         spend_by_slot = defaultdict(int)
         picks_by_slot = defaultdict(int)
+        roster_by_slot = defaultdict(lambda: defaultdict(int))
         for pick in draft_data:
             meta = pick.get('metadata', {})
             name = f"{meta.get('first_name', '')} {meta.get('last_name', '')}".strip()
@@ -511,6 +686,7 @@ class DataManager:
             if slot is not None:
                 spend_by_slot[slot] += int(meta.get('amount', 0))
                 picks_by_slot[slot] += 1
+                roster_by_slot[slot][str(meta.get('position', '')).upper()] += 1
 
         slots = sorted(spend_by_slot) or list(range(1, LEAGUE_TEAMS + 1))
         slots = sorted(set(slots) | set(range(1, LEAGUE_TEAMS + 1)))
@@ -523,9 +699,14 @@ class DataManager:
             remaining = LEAGUE_BUDGET - spent
             # Hold back a dollar for every slot after the one being bid on.
             max_bid = max(remaining - max(open_slots - 1, 0), 0) if open_slots else 0
+            needs = _unmet_needs(roster_by_slot.get(slot, {}))
             teams.append({
                 'slot': slot, 'spent': spent, 'remaining': remaining,
                 'slots_filled': filled, 'slots_open': open_slots, 'max_bid': max_bid,
+                # Money this team can actually put on contested players, holding
+                # back a dollar for each of its other open slots.
+                'spendable': max(remaining - open_slots, 0),
+                'needs': {k: round(v, 2) for k, v in needs.items() if v > 0},
             })
 
         total_pot = LEAGUE_TEAMS * LEAGUE_BUDGET
@@ -537,21 +718,20 @@ class DataManager:
         # Only players worth more than a dollar get bid on. The $1 tail is
         # filler every roster takes regardless of the market, so it belongs on
         # neither side of an inflation ratio.
-        contested = []
-        by_position = defaultdict(float)
-        for _, row in auction_values.iterrows():
-            if str(row['Player']) in drafted:
-                continue
-            value = to_dollars(row['Value'])
-            if value > 1:
-                contested.append((value, str(row['Position'])))
-        contested.sort(reverse=True)
+        # The prebuilt board is already sorted by price and already has the
+        # unrostered positions stripped out.
+        contested = [(p['auction_value'], p['position'])
+                     for p in self._data_cache['board']
+                     if p['auction_value'] > 1 and p['name'] not in drafted]
         # No more of them can be bought than there are seats left.
         buyable = contested[:slots_open] if slots_open else []
+        by_position = defaultdict(float)
         for value, position in buyable:
             by_position[position] += value - 1
         value_remaining = sum(value - 1 for value, _ in buyable)
         filler_slots = max(slots_open - len(buyable), 0)
+
+        positions = _positional_market(teams, buyable, spendable)
 
         return {
             'teams': LEAGUE_TEAMS,
@@ -571,6 +751,7 @@ class DataManager:
             # over sheet. <1 means bargains are coming.
             'inflation': round(spendable / value_remaining, 3) if value_remaining > 0 else None,
             'value_remaining_by_position': {k: round(v, 1) for k, v in sorted(by_position.items())},
+            'positions': positions,
             'price_ladder': self._price_ladder(
                 spendable / value_remaining if value_remaining > 0 else None),
             'teams_detail': teams,
