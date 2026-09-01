@@ -133,7 +133,10 @@ class DataManager:
         # Ceiling only — inflation is also invalidated whenever the draft changes,
         # so this bounds staleness during idle stretches, not during live bidding.
         self._cache_ttl = 300
-        self._draft_cache_ttl = 2  # live drafts move fast; this is the freshness floor
+        # Kept below the client poll interval (3s) on purpose: if the TTL met or
+        # exceeded it, a poll could land on cache that was already a full cycle
+        # old and the two delays would stack.
+        self._draft_cache_ttl = 1
         self._lock = asyncio.Lock()
         
         # Pre-load static data

@@ -113,7 +113,7 @@ const InflationData = ({ draftId, isLive }) => {
         // Matches the poll cadence. This used to be 10s, which meant that even in
         // live mode the inflation numbers could sit five polls stale while the
         // ticker beside them had already moved.
-        const MIN_REFETCH_MS = 2000;
+        const MIN_REFETCH_MS = 3000;
         if (cacheRef.current[draftId] && !forceRefresh && (!lastFetched || (now - lastFetched < MIN_REFETCH_MS))) {
             setInflationData(cacheRef.current[draftId]);
             console.log(`Loaded inflation data from cache for draftId ${draftId}`);

@@ -303,7 +303,7 @@ const EnhancedTicker = ({ draftId, draftOrder = [], isLive }) => {
         fetchPicksAndData();
         
         if (isLive) {
-            updateInterval.current = setInterval(fetchPicksAndData, 2000);
+            updateInterval.current = setInterval(fetchPicksAndData, 3000);
         }
 
         return () => {

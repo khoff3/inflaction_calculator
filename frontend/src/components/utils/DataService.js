@@ -44,11 +44,11 @@ class DataService {
         // Initial fetch
         this.fetchDataOnce();
 
-        // Poll every 2 seconds, matching the backend's draft-cache TTL. Faster
-        // than that just re-reads the same cached payload.
+        // Poll every 3 seconds. The backend's draft cache expires in 1s, so each
+        // poll gets genuinely fresh data rather than the tail of a cache window.
         this.pollingInterval = setInterval(() => {
             this.fetchDataOnce();
-        }, 2000);
+        }, 3000);
 
         this.isPolling = true;
     }
