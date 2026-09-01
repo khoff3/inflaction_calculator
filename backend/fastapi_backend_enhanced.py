@@ -428,7 +428,9 @@ class DataManager:
             })
         board.sort(key=lambda p: p['auction_value'], reverse=True)
         self._data_cache['board'] = board
-        self._data_cache['board_values'] = {p['name']: p['auction_value'] for p in board}
+        # Keyed by name, so a drafted pick can be resolved back to its board
+        # row - its value, its tier and its positional rank.
+        self._data_cache['board_by_name'] = {p['name']: p for p in board}
         logging.info(f"Prebuilt board of {len(board)} players with tiers")
 
     def _create_draft_hash(self, draft_data: List[Dict[str, Any]]) -> str:
@@ -1027,7 +1029,7 @@ def _assemble_available_players(draft_data):
     one place where per-request work scales with the size of the board.
     """
     board = data_manager._data_cache['board']
-    board_values = data_manager._data_cache['board_values']
+    board_by_name = data_manager._data_cache['board_by_name']
     mappings = data_manager._data_cache['player_mappings']
 
     # A name counts as taken under its Sleeper spelling and its ETR one.
@@ -1047,10 +1049,14 @@ def _assemble_available_players(draft_data):
         meta = pick.get('metadata', {})
         name = f"{meta.get('first_name', '')} {meta.get('last_name', '')}".strip()
         spent = int(meta.get('amount', 0) or 0)
-        expected = board_values.get(name)
-        if expected is None:
+        # A drafted player is still a board row - the board knows his rank and
+        # tier, and dropping them left the All Players tab showing nothing in
+        # those columns for every pick that had already sold.
+        entry = board_by_name.get(name)
+        if entry is None:
             mapped = mappings.get(name, {}).get('auction_name')
-            expected = board_values.get(mapped, 0.0) if mapped else 0.0
+            entry = board_by_name.get(mapped) if mapped else None
+        expected = entry['auction_value'] if entry else 0.0
         drafted_players_with_values.append({
             'name': name,
             'position': meta.get('position', 'N/A'),
@@ -1058,6 +1064,8 @@ def _assemble_available_players(draft_data):
             'spent_amount': spent,
             'expected_value': expected,
             'difference': spent - expected,
+            'position_rank': entry['position_rank'] if entry else 'N/A',
+            'tier': entry['tier'] if entry else 'N/A',
             'round': pick.get('round'),
             'pick_no': pick.get('pick_no'),
         })
