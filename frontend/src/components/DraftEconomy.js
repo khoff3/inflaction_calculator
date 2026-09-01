@@ -62,93 +62,59 @@ const DraftEconomy = ({ draftId, isLive }) => {
         : inflation < 0.95 ? 'moderate-negative'
         : 'neutral';
 
+    const stat = { display: 'inline-block', marginRight: '1.5rem', fontSize: '0.9em' };
+    const label = { opacity: 0.6, marginRight: '0.35rem' };
+
     return (
         <div>
-            <h2>Draft Economy</h2>
-
-            <p className="inflation-percentage">
-                Players over $1 are going for{' '}
-                <span className={inflationClass}>
+            <div style={{ marginBottom: '0.75rem' }}>
+                <span style={{ fontSize: '1.6em', fontWeight: 'bold' }} className={inflationClass}>
                     {inflation === null ? '—' : `${inflation.toFixed(2)}×`}
-                </span>{' '}
-                sheet
-                {inflation !== null && (
-                    <span style={{ fontSize: '0.8em', marginLeft: '0.75rem', opacity: 0.75 }}>
-                        {inflation > 1.02 ? 'the room has more cash than board'
-                            : inflation < 0.98 ? 'the board is deeper than the cash left'
-                            : 'roughly at par'}
+                </span>
+                <span style={{ marginLeft: '0.6rem', opacity: 0.8 }}>
+                    on players over $1
+                    {inflation !== null && (inflation > 1.02 ? ' — more cash than board'
+                        : inflation < 0.98 ? ' — more board than cash' : ' — at par')}
+                </span>
+            </div>
+
+            <div style={{ marginBottom: '0.75rem' }}>
+                <span style={stat}><span style={label}>left &gt;$1</span><strong>{economy.contested_players}</strong></span>
+                <span style={stat}><span style={label}>money</span><strong>{money(economy.spendable)}</strong></span>
+                <span style={stat}><span style={label}>value</span><strong>{money(economy.value_remaining)}</strong></span>
+                <span style={stat}><span style={label}>slots</span>{economy.slots_filled}/{economy.slots_filled + economy.slots_open}</span>
+                <span style={stat}><span style={label}>$1 filler</span>{economy.filler_slots}<span style={{ opacity: 0.5 }}> of ~{economy.typical_filler_slots}</span></span>
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+                {['QB', 'RB', 'WR', 'TE'].map((position) => (
+                    <span key={position} style={stat}>
+                        <span style={label}>{position}</span>
+                        {money(economy.value_remaining_by_position?.[position] || 0)}
                     </span>
-                )}
-            </p>
+                ))}
+                <span style={{ opacity: 0.5, fontSize: '0.85em' }}>value left by position</span>
+            </div>
 
-            <h3>What Things Should Cost</h3>
-            <Table bordered hover className="centered-table">
+            <Table bordered hover size="sm" className="centered-table" style={{ fontSize: '0.9em' }}>
                 <thead>
-                    <tr><th>Sheet Value</th><th>Expected Price</th><th>Difference</th></tr>
+                    <tr><th>Sheet</th>{economy.price_ladder.map(r => <th key={r.sheet}>${r.sheet}</th>)}</tr>
                 </thead>
                 <tbody>
-                    {economy.price_ladder.map((rung) => {
-                        const delta = rung.expected - rung.sheet;
-                        return (
-                            <tr key={rung.sheet}>
-                                <td>{money(rung.sheet)}</td>
-                                <td><strong>{money(rung.expected)}</strong></td>
-                                <td className={getDeltaClass(delta)}>
-                                    {delta >= 0 ? '+' : ''}{delta.toFixed(1)}
-                                </td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </Table>
-
-            <h3>The Contested Pool</h3>
-            <Table bordered hover className="centered-table">
-                <tbody>
                     <tr>
-                        <td>Players left over $1</td>
-                        <td><strong>{economy.contested_players}</strong></td>
-                    </tr>
-                    <tr>
-                        <td>Their value above the $1 floor</td>
-                        <td>{money(economy.value_remaining)}</td>
-                    </tr>
-                    <tr>
-                        <td>Money chasing them <span style={{ opacity: 0.6 }}>(after $1 per open slot)</span></td>
-                        <td>{money(economy.spendable)}</td>
-                    </tr>
-                    <tr>
-                        <td>Slots that will take $1 filler</td>
-                        <td>
-                            {economy.filler_slots}
-                            <span style={{ opacity: 0.6 }}> (this league averages {economy.typical_filler_slots})</span>
-                        </td>
+                        <td style={{ opacity: 0.6 }}>Pays</td>
+                        {economy.price_ladder.map(r => (
+                            <td key={r.sheet} className={getDeltaClass(r.expected - r.sheet)}>
+                                <strong>${r.expected}</strong>
+                            </td>
+                        ))}
                     </tr>
                 </tbody>
             </Table>
 
-            <h3>Value Left by Position</h3>
-            <Table bordered hover className="centered-table">
+            <Table bordered hover size="sm" className="centered-table" style={{ fontSize: '0.9em' }}>
                 <thead>
-                    <tr><th>Position</th><th>Value Above $1</th></tr>
-                </thead>
-                <tbody>
-                    {['QB', 'RB', 'WR', 'TE'].map((position) => (
-                        <tr key={position}>
-                            <td>{position}</td>
-                            <td>{money(economy.value_remaining_by_position?.[position] || 0)}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </Table>
-
-            <h3>Team Budgets</h3>
-            <Table bordered hover className="centered-table">
-                <thead>
-                    <tr>
-                        <th>Team</th><th>Spent</th><th>Remaining</th>
-                        <th>Slots Open</th><th>Max Bid</th>
-                    </tr>
+                    <tr><th>Tm</th><th>Spent</th><th>Left</th><th>Slots</th><th>Max Bid</th></tr>
                 </thead>
                 <tbody>
                     {economy.teams_detail.map((team) => (
@@ -163,10 +129,8 @@ const DraftEconomy = ({ draftId, isLive }) => {
                 </tbody>
             </Table>
 
-            <p style={{ fontSize: '0.85em', opacity: 0.7, marginTop: '1rem' }}>
-                Totals exclude $1 players on both sides. They are a third of every
-                draft here but 2.6% of the dollars, so counting them drags the
-                multiplier toward 1.00 and hides what the contested players do.
+            <p style={{ fontSize: '0.8em', opacity: 0.6 }}>
+                $1 players excluded from both sides — a third of picks here, 2.6% of dollars.
             </p>
         </div>
     );
