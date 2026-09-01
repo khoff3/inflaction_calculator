@@ -62,12 +62,12 @@ const DraftEconomy = ({ draftId, isLive }) => {
         : inflation < 0.95 ? 'moderate-negative'
         : 'neutral';
 
-    const stat = { display: 'inline-block', marginRight: '1.25rem', fontSize: '0.9em' };
+    const stat = { display: 'inline-block', margin: '0 0.7rem', fontSize: '0.95em' };
     const label = { opacity: 0.6, marginRight: '0.3rem' };
     // Scoped width. The shared .centered-table class is width:100%, which
     // stretches a nine-column ladder across the whole viewport and reads as
     // sparse rather than compact, so these tables opt out of it.
-    const tight = { width: 'auto', fontSize: '0.85em', marginBottom: '0.5rem' };
+    const tight = { width: 'auto', margin: '0 auto 0.6rem', fontSize: '0.9em' };
     const half = economy.teams_detail.slice(0, Math.ceil(economy.teams_detail.length / 2));
     const rest = economy.teams_detail.slice(Math.ceil(economy.teams_detail.length / 2));
 
@@ -91,7 +91,7 @@ const DraftEconomy = ({ draftId, isLive }) => {
     );
 
     return (
-        <div style={{ maxWidth: '720px' }}>
+        <div style={{ maxWidth: '860px', margin: '0 auto', textAlign: 'center' }}>
             <div>
                 <span style={{ fontSize: '1.5em', fontWeight: 'bold' }} className={inflationClass}>
                     {inflation === null ? '—' : `${inflation.toFixed(2)}×`}
@@ -137,12 +137,12 @@ const DraftEconomy = ({ draftId, isLive }) => {
                 </tbody>
             </Table>
 
-            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', justifyContent: 'center' }}>
                 {teamTable(half)}
                 {teamTable(rest)}
             </div>
 
-            <p style={{ fontSize: '0.78em', opacity: 0.6, marginTop: '0.25rem' }}>
+            <p style={{ fontSize: '0.8em', opacity: 0.6, marginTop: '0.5rem' }}>
                 $1 players excluded both sides — a third of picks here, 2.6% of dollars.
             </p>
         </div>
