@@ -4,6 +4,7 @@ import InflationData from './InflationData';
 import TeamBreakdown from './TeamBreakdown';
 import Ticker from './Ticker';
 import AvailablePlayers from './AvailablePlayers';
+import DraftEconomy from './DraftEconomy';
 import axios from 'axios';
 
 function Dashboard() {
@@ -152,6 +153,7 @@ function Dashboard() {
             </div>
 
             <div className="tab">
+                <button className="tablinks" onClick={() => setActiveTab('economy')}>Draft Economy</button>
                 <button className="tablinks" onClick={() => setActiveTab('scatter')}>Scatter Plot</button>
                 <button className="tablinks" onClick={() => setActiveTab('inflation')}>Inflation Data</button>
                 <button className="tablinks" onClick={() => setActiveTab('teamBreakdown')}>Team Breakdown</button>
@@ -168,6 +170,10 @@ function Dashboard() {
                     />
                     Live Draft
                 </label>
+            </div>
+
+            <div style={{ display: activeTab === 'economy' ? 'block' : 'none' }}>
+                {draftId && <DraftEconomy draftId={draftId} isLive={isLive} />}
             </div>
 
             <div style={{ display: activeTab === 'scatter' ? 'block' : 'none' }}>

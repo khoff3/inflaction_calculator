@@ -9,3 +9,6 @@ python-Levenshtein==0.21.1
 pydantic==2.5.0
 python-multipart==0.0.6
 psutil==5.9.6 
+# Test-only: fastapi.testclient needs httpx, and starlette 0.27's client
+# does not accept httpx 0.28+.
+httpx==0.27.2

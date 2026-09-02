@@ -1,0 +1,16 @@
+{
+  "year": "2026",
+  "scoring": "standard",
+  "value_column": "ETR Std",
+  "sources": {
+    "auction_values": "NFL_ETR_2026_Auction_Values.csv",
+    "rankings": "FantasyPros_2026_Draft_ALL_Rankings.csv"
+  },
+  "counts": {
+    "auction_values": 458,
+    "QB": 54,
+    "RB": 145,
+    "WR": 175,
+    "TE": 83
+  }
+}

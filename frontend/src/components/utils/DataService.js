@@ -44,10 +44,11 @@ class DataService {
         // Initial fetch
         this.fetchDataOnce();
 
-        // Start polling every 5 seconds
+        // Poll every 3 seconds. The backend's draft cache expires in 1s, so each
+        // poll gets genuinely fresh data rather than the tail of a cache window.
         this.pollingInterval = setInterval(() => {
             this.fetchDataOnce();
-        }, 5000);
+        }, 3000);
 
         this.isPolling = true;
     }

@@ -29,6 +29,76 @@ const getPositionColor = (position) => {
     return colors[position] || '#808080'; // Gray fallback
 };
 
+// Columns that read as words. Everything else is money, a count or a rank.
+const TEXT_COLUMNS = new Set(['team', 'player', 'position']);
+
+/**
+ * What a pick sorts on for a given column: a number, a string, or null.
+ *
+ * Never a numeric string. Sleeper sends metadata.amount as text, so comparing
+ * it raw sorted Price lexicographically - "9" ahead of "155" ahead of "23".
+ *
+ * Null means the column doesn't apply to this pick, which is not the same as
+ * zero. A player the sheet doesn't cover has no expected value, no DOE and no
+ * inflation; scoring him zero would sort him into the middle of the table as
+ * though he went for exactly sheet.
+ */
+export const sortValueFor = (pick, key, lookup = {}, draftOrder = []) => {
+    const playerData = lookup[`${pick.metadata.first_name} ${pick.metadata.last_name}`] || {};
+    const price = Number(pick.metadata.amount);
+    const expected = Number(playerData.expectedValue);
+    const priced = Number.isFinite(expected) && expected > 0;
+
+    switch (key) {
+        case 'pick_no':
+            return pick.pick_no;
+        case 'team':
+            return draftOrder[pick.draft_slot - 1] || `Team ${pick.draft_slot}`;
+        case 'player':
+            return `${pick.metadata.first_name} ${pick.metadata.last_name}`;
+        case 'position':
+            return pick.metadata.position;
+        case 'price':
+            return Number.isFinite(price) ? price : null;
+        case 'ep':
+            return priced ? expected : null;
+        case 'doe':
+            return priced ? price - expected : null;
+        case 'inflation':
+            // Dividing by a missing expected value used to give Infinity,
+            // which parked every unmatched player at the top of the column.
+            return priced ? ((price - expected) / expected) * 100 : null;
+        case 'tier': {
+            const tier = parseInt(playerData.tier, 10);
+            return Number.isFinite(tier) ? tier : null;
+        }
+        default:
+            return null;
+    }
+};
+
+export const comparePicks = (a, b, direction) => {
+    const left = a._sortValue;
+    const right = b._sortValue;
+    // Rows with nothing to sort on sit at the bottom whichever way the column
+    // points. An unmatched player has no business leading a sort by inflation.
+    if (left === null && right === null) return b.pick_no - a.pick_no;
+    if (left === null) return 1;
+    if (right === null) return -1;
+
+    const comparison = typeof left === 'string' || typeof right === 'string'
+        ? String(left).localeCompare(String(right))
+        : left - right;
+    // Ties fall back to newest first, so a sort by position or tier still
+    // reads as a draft feed inside each group.
+    if (comparison === 0) return b.pick_no - a.pick_no;
+    return direction === 'asc' ? comparison : -comparison;
+};
+
+export const sortPicksBy = (picks, sortConfig, lookup, draftOrder) => picks
+    .map(pick => ({ ...pick, _sortValue: sortValueFor(pick, sortConfig.key, lookup, draftOrder) }))
+    .sort((a, b) => comparePicks(a, b, sortConfig.direction));
+
 const Ticker = ({ draftId, draftOrder = [], isLive }) => {
     const [picks, setPicks] = useState([]);
     const [filteredPicks, setFilteredPicks] = useState([]);
@@ -153,68 +223,16 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
         };
     }, [draftId, isLive]);
 
-    const sortPicks = useCallback((picksToSort) => {
-        // Pre-compute sort values to avoid repeated lookups
-        const picksWithSortValues = picksToSort.map(pick => {
-            const playerKey = `${pick.metadata.first_name} ${pick.metadata.last_name}`;
-            const playerData = expectedValuesLookup[playerKey] || {};
-            
-            let sortValue;
-            switch (sortConfig.key) {
-                case 'pick_no':
-                    sortValue = pick.pick_no;
-                    break;
-                case 'team':
-                    const teamIndex = pick.draft_slot - 1;
-                    sortValue = draftOrder[teamIndex] || `Team ${pick.draft_slot}`;
-                    break;
-                case 'player':
-                    sortValue = `${pick.metadata.first_name} ${pick.metadata.last_name}`;
-                    break;
-                case 'position':
-                    sortValue = pick.metadata.position;
-                    break;
-                case 'price':
-                    sortValue = pick.metadata.amount;
-                    break;
-                case 'ep':
-                    sortValue = playerData.expectedValue === 'N/A' ? 0 : (playerData.expectedValue || 0);
-                    break;
-                case 'doe':
-                    const expected = playerData.expectedValue || 0;
-                    sortValue = expected === 'N/A' ? 0 : (pick.metadata.amount - expected);
-                    break;
-                case 'inflation':
-                    const expForInfl = playerData.expectedValue || 0;
-                    sortValue = expForInfl === 'N/A' ? 0 : ((pick.metadata.amount - expForInfl) / expForInfl) * 100;
-                    break;
-                case 'tier':
-                    sortValue = playerData.tier === 'N/A' ? 999 : parseInt(playerData.tier) || 999;
-                    break;
-                default:
-                    sortValue = 0;
-            }
-            
-            return { ...pick, _sortValue: sortValue };
-        });
-
-        // Sort by pre-computed values
-        return picksWithSortValues.sort((a, b) => {
-            if (a._sortValue < b._sortValue) {
-                return sortConfig.direction === 'asc' ? -1 : 1;
-            }
-            if (a._sortValue > b._sortValue) {
-                return sortConfig.direction === 'asc' ? 1 : -1;
-            }
-            return 0;
-        });
-    }, [sortConfig, expectedValuesLookup, draftOrder]);
+    const sortPicks = useCallback(
+        (picksToSort) => sortPicksBy(picksToSort, sortConfig, expectedValuesLookup, draftOrder),
+        [sortConfig, expectedValuesLookup, draftOrder]);
 
     const handleSort = useCallback((key) => {
-        setSortConfig(prevConfig => ({
-            key,
-            direction: prevConfig.key === key && prevConfig.direction === 'asc' ? 'desc' : 'asc'
-        }));
+        setSortConfig(prevConfig => (prevConfig.key === key
+            ? { key, direction: prevConfig.direction === 'asc' ? 'desc' : 'asc' }
+            // First click on a new column: text reads best A-Z, but nobody
+            // opens a money column wanting the cheapest pick of the draft.
+            : { key, direction: TEXT_COLUMNS.has(key) ? 'asc' : 'desc' }));
     }, []);
 
     // Memoize filtered and sorted data to prevent unnecessary re-computations
@@ -248,7 +266,9 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
             });
         }
 
-        return sortPicks(filtered.length > 0 ? filtered : picks);
+        // Falling back to every pick when a filter matches nothing made the
+        // filters look broken - you narrow to one team and get the whole draft.
+        return sortPicks(filtered);
     }, [picks, filters, draftOrder, computeExpectedValues, sortPicks]);
 
     // Update filtered picks when memoized data changes
@@ -387,14 +407,21 @@ const Ticker = ({ draftId, draftOrder = [], isLive }) => {
                     </tr>
                 </thead>
                 <tbody>
-                    {filteredPicks.map((pick, index) => {
+                    {filteredPicks.length === 0 && (
+                        <tr>
+                            <td colSpan={9} style={{ textAlign: 'center', opacity: 0.6, padding: '1rem' }}>
+                                {picks.length === 0 ? 'No picks yet.' : 'No picks match these filters.'}
+                            </td>
+                        </tr>
+                    )}
+                    {filteredPicks.map((pick) => {
                         const teamIndex = pick.draft_slot - 1;
                         const teamName = draftOrder[teamIndex] ? draftOrder[teamIndex] : `Team ${pick.draft_slot}`;
 
                         const { expectedValue, doe, inflationPercent, tier } = computeExpectedValues(pick);
 
                         return (
-                            <tr key={index}>
+                            <tr key={pick.pick_no}>
                                 <td className="pick-number-column">{pick.pick_no}</td>
                                 <td>{teamName}</td>
                                 <td className="player-name-column">{pick.metadata.first_name} {pick.metadata.last_name}</td>

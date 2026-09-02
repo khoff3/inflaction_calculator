@@ -78,9 +78,13 @@ const AvailablePlayers = ({ draftId, isLive }) => {
                 team: player.team || 'N/A',
                 auction_value: 0, // Drafted players don't have auction values
                 tier: 'Drafted',
-                position_rank: 'N/A',
+                // The board knows the rank of a player who has already sold.
+                position_rank: player.position_rank || 'N/A',
                 status: 'drafted',
-                pick_number: player.pick_number,
+                // Sleeper's field is pick_no, so this read undefined: the Pick
+                // column was blank for every drafted player and sorting by it
+                // scored them all 999, which is no sort at all.
+                pick_number: player.pick_no,
                 round: player.round,
                 team_name: player.team || 'N/A',
                 expected_value: player.expected_value || 0,
@@ -341,7 +345,10 @@ const AvailablePlayers = ({ draftId, isLive }) => {
         label: `Tier ${i + 1}`
     }));
 
-    if (loading) {
+    // Only blank the screen before there is anything to show. Gating on `loading`
+    // alone tore the whole table down on every poll, resetting scroll, sort and
+    // filters several times a minute.
+    if (loading && allPlayers.length === 0) {
         return (
             <div style={{ textAlign: 'center', padding: '2rem' }}>
                 <div style={{ 

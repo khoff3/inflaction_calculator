@@ -4,13 +4,15 @@ A real-time fantasy football auction draft inflation calculator with enhanced pe
 
 ## 🚀 **Enhanced Features**
 
-- **Enhanced FastAPI Backend**: High-performance async API with smart caching and 2025 data
-- **Real-time Updates**: Adaptive polling with change detection via DataService
+- **Enhanced FastAPI Backend**: High-performance async API with smart caching
+- **Draft Economy**: Forward-looking view of money left against value left, with
+  a per-position demand model — see below
+- **Real-time Updates**: 3-second polling with change detection via DataService
 - **Advanced Analytics**: Trending spend analysis, cost of waiting calculations, and position-based R² analysis
 - **Enhanced ScatterPlot**: Linear regression, cost calculations, and position breakdowns
-- **Smart Caching**: 30-second draft data TTL with change detection
-- **Performance Optimized**: Reduced API calls by ~80% during inactive periods
-- **2025 Data Integration**: Latest fantasy football rankings and auction values
+- **Smart Caching**: 1-second draft TTL so each poll gets fresh picks, with a
+  pick-count endpoint that skips the work entirely when nothing has sold
+- **2026 Data Integration**: ETR standard-scoring auction values and FantasyPros tiers
 - **Player Notes System**: Hybrid localStorage + static JSON notes with targets and priorities
 
 ## 📁 **Project Structure**
@@ -21,10 +23,16 @@ inflaction_calculator/
 │   ├── fastapi_backend_enhanced.py    # Main Enhanced FastAPI application
 │   ├── start_enhanced_backend.py      # Enhanced backend startup script
 │   ├── requirements_fastapi.txt       # FastAPI dependencies
-│   ├── 2025/                          # Latest year data (QB, RB, WR, TE rankings)
+│   ├── build_year_data.py             # ETR + FantasyPros exports -> year folder
+│   ├── build_player_mappings.py       # Generates the annual name-anomaly file
+│   ├── 2026/                          # Latest year data (highest year folder wins)
+│   ├── 2025/                          # Historical data
 │   ├── 2024/                          # Historical data
 │   ├── 2023/                          # Historical data
 │   └── archive_old_files/             # Archived old Flask files
+├── scripts/
+│   ├── run-backend.js                 # Cross-platform backend launcher
+│   └── setup-backend.js               # Creates backend/.venv, installs deps
 ├── frontend/
 │   ├── src/components/                # React components
 │   │   ├── EnhancedTicker.js          # Advanced ticker with caching
@@ -42,29 +50,125 @@ inflaction_calculator/
 
 ## 🛠️ **Setup & Installation**
 
-### Quick Start (Recommended)
+Runs on Windows and macOS/Linux. You need **Node 18+** and **Python 3.11+**.
+
+macOS ships Python 3.9 as `python3`, and `brew install python@3.11` installs
+alongside it as `python3.11` rather than replacing it — so the bare name is
+usually the wrong interpreter on a Mac. `npm run setup` probes `python3.13`,
+`python3.12`, `python3.11`, then `python3`, and uses the first that meets the
+floor; `BACKEND_PYTHON` overrides the search.
+
+### First time
 ```bash
-# Start both frontend and backend concurrently
-npm start
+npm run setup      # installs node deps, then creates backend/.venv and installs Python deps
 ```
 
-### Manual Setup
+### Every time after that
+```bash
+npm start          # frontend on :3000, backend on :5050, concurrently
+```
 
-#### Backend Setup
+Then open http://localhost:3000 and enter a Sleeper draft ID. The backend's own
+docs are at http://localhost:5050/docs, and http://localhost:5050/health reports
+which data year it loaded — check that it says the year you expect.
+
+### Running the halves separately
+```bash
+npm run backend    # FastAPI on :5050
+npm run frontend   # React dev server on :3000
+```
+
+`npm run backend` goes through `scripts/run-backend.js`, which resolves a Python
+that can actually import the dependencies — `$BACKEND_PYTHON` if set, else
+`backend/.venv` or `backend/venv` (`bin/python` on macOS/Linux,
+`Scripts\python.exe` on Windows), else `python3`/`python` from PATH. If none of
+them can, it says so and points at `npm run setup:backend` rather than failing
+with an import error halfway through boot.
+
+To use a Python you already have:
+```bash
+# macOS / Linux
+BACKEND_PYTHON=/path/to/python npm run backend
+# Windows (PowerShell)
+$env:BACKEND_PYTHON="C:\path\to\python.exe"; npm run backend
+```
+
+### Manual backend setup
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements_fastapi.txt
 python start_enhanced_backend.py
 ```
 
-#### Frontend Setup
+## 🧪 **Tests**
+
 ```bash
-cd frontend
-npm install
-npm start
+python3 -m pytest tests/            # backend: mappings, draft economy, board
+cd frontend && CI=true npm test     # frontend: ticker sorting
 ```
+
+The backend tests load the real data folder, so they also catch a bad annual
+build — a values file whose names stop matching the rankings will fail
+`test_player_mappings.py` rather than quietly zeroing out expected values.
+
+## 📅 **Annual Data Update**
+
+Everything the backend reads lives in `backend/<YEAR>/`, and the highest year
+folder wins (`DATA_YEAR=2025` pins an older one). Two raw downloads become that
+folder:
+
+League shape lives in constants at the top of
+`backend/fastapi_backend_enhanced.py` — 12 teams, $200, 15 roster slots (2026
+dropped the kicker and the roster shortened with it), and the starter shape the
+demand model needs. `ROSTER_SLOTS` overrides the depth if it changes again.
+
+1. **FantasyPros draft rankings** — the combined ALL-positions export
+   (`FantasyPros_<YEAR>_Draft_ALL_Rankings.csv`). FantasyPros stopped shipping
+   four separate positional files; the build script splits it back out.
+2. **ETR auction values** (`NFL_ETR_Auction_Values.csv`). Their 2026 export
+   replaced the single `Value` column with one per scoring format — `ETR Full
+   PPR`, `ETR Half PPR`, `ETR Std`, `ETR Superflex Full/Half` — plus ESPN and
+   Yahoo ADP and a gsis player id. The league plays **standard (non-PPR)**
+   scoring, so `ETR Std` is the default; `--scoring full_ppr` (or `half_ppr`,
+   `superflex_full`, ...) picks another.
+
+   Careful: `Standard_Auction_Values.csv` is named for its *role* — it has been
+   the canonical values file since 2023 — and that name is unrelated to standard
+   scoring. Which column a year folder was actually built from is recorded in
+   `<YEAR>/build_info.json`, so you never have to infer it from the filename.
+
+Drop both into `backend/<YEAR>/`, then:
+
+```bash
+cd backend
+python build_year_data.py --year 2026 \
+    --etr 2026/NFL_ETR_Auction_Values.csv \
+    --fantasypros 2026/FantasyPros_2026_Draft_ALL_Rankings.csv \
+    --scoring standard
+python build_player_mappings.py --year 2026 --draft-id <any completed Sleeper draft>
+cd .. && python -m unittest tests.test_player_mappings
+```
+
+`build_year_data.py` writes `Standard_Auction_Values.csv`, the four positional
+ranking files, and `build_info.json` recording the scoring format and sources. FantasyPros' tiers in the ALL export are *overall* (a QB starts at
+tier 4), so each position is dense-ranked back to 1..N — the tier breaks are
+theirs, only the numbering changes.
+
+`build_player_mappings.py` writes the annual anomaly file. Sleeper drops
+generational suffixes, ETR drops periods, and some names differ outright
+(`Kenny Gainwell` / `Kenneth Gainwell`); the first two resolve automatically, the
+rest come from `KNOWN_ALIASES` in that script. Anything it can't resolve is
+printed rather than guessed at, and players the sources genuinely don't cover
+land in `unpriced_players.csv` — those price at $0 by design.
+
+**Run the test before draft day.** An unmapped name doesn't raise: it resolves to
+$0, which shrinks the expected-value denominator and skews every inflation
+number on the board. The test walks a real draft's worth of names through the
+backend's own lookup and fails on any that don't land. Without `--draft-id` the
+mapping builder and the test both read `<YEAR>/sleeper_draft_names.csv`, a
+checked-in snapshot of one draft's picks.
 
 ## 🎯 **Key Improvements**
 
@@ -90,7 +194,8 @@ npm start
 - `POST /cache/clear` - Clear cache manually
 - `POST /player_lookup` - Fuzzy player name matching
 - `GET /draft_notes` - Global and draft-specific player notes
-- `GET /available_players` - Available players with tier and position data
+- `GET /available_players` - Available and drafted players with tier, positional rank and value
+- `GET /draft_economy` - Money left vs value left, per-position demand, per-team wallets
 
 ## 🔧 **Frontend Components**
 
@@ -100,10 +205,20 @@ npm start
 - **Position Breakdown**: Average spend, min/max, and R² by position
 - **Interactive Visualizations**: Plotly.js integration with responsive design
 
-### EnhancedTicker
-- **Advanced Caching**: Smart caching with localStorage persistence
+### Ticker
+- **Sortable Columns**: Pick, team, player, position, price, EP, DOE, inflation, tier
 - **Real-time Updates**: DataService integration for live updates
-- **Performance Optimized**: Reduced API calls with change detection
+- **Sorting Rules**: Money sorts numerically (Sleeper sends prices as strings),
+  players the sheet doesn't price sort last rather than as $0, and ties fall
+  back to newest first
+
+### DraftEconomy
+- **Headline Multiplier**: Spendable cash over buyable value, both measured
+  above the $1 floor, so roster filler doesn't drag the number toward 1.00
+- **Positional Demand**: Each team's spendable money split across the starter
+  slots it still needs, weighted by the going rate at that position. Divided by
+  the value left there, it says which positions will run over sheet
+- **Team Wallets**: Spent, left, open slots, max bid and remaining needs
 
 ### DataService
 - **Centralized Management**: Single source of truth for all data operations
@@ -122,11 +237,14 @@ npm start
 ## 🚀 **Performance Optimizations**
 
 1. **Smart Caching**: Hash-based change detection with TTL
-2. **Adaptive Polling**: 30-second draft data cache with change detection
-3. **Differential Updates**: Lightweight change detection endpoint
-4. **Optimized Lookups**: Pre-built lookup tables and fuzzy matching
-5. **Memory Efficiency**: In-memory caching with automatic cleanup
-6. **Parallel Processing**: Async operations with thread pool support
+2. **Adaptive Polling**: 3-second poll against a 1-second cache, short-circuited
+   by a pick-count check when nothing has sold
+3. **Prebuilt Board**: Tiers resolved once at load rather than per request,
+   which took `/available_players` from ~450ms to ~13ms
+4. **Differential Updates**: Lightweight change detection endpoint
+5. **Optimized Lookups**: Pre-built lookup tables and fuzzy matching
+6. **Memory Efficiency**: In-memory caching with automatic cleanup
+7. **Parallel Processing**: Async operations with thread pool support
 
 ## 📈 **Analytics Features**
 
