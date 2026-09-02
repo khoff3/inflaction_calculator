@@ -449,8 +449,15 @@ class DataManager:
         
         return hashlib.md5(last_pick_info.encode()).hexdigest()
     
-    async def get_draft_data(self, draft_id: str) -> List[Dict[str, Any]]:
-        """Get draft data with smart caching and change detection."""
+    async def get_draft_data(self, draft_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Get draft data with smart caching and change detection.
+
+        Returns None when the draft could not be fetched, and a list - possibly
+        empty - when it could. A draft with no picks is a real state, not an
+        error: it is what every dashboard sees between opening the app and the
+        first nomination. Collapsing both onto [] meant the whole app returned
+        404s and 500s right up until someone bought a player.
+        """
         cache_key = f"draft_{draft_id}"
         
         # Check cache first
@@ -473,28 +480,26 @@ class DataManager:
                     draft_hash = self._create_draft_hash(draft_data)
                     last_hash = self._data_cache.get(f"draft_hash_{draft_id}")
                     
-                    # Only update cache if data has actually changed
-                    if draft_hash != last_hash:
+                    # Only update cache if data has actually changed. The
+                    # cache-key check matters after /cache/clear, which drops
+                    # the picks but leaves the hash: without it an unchanged
+                    # draft would look cached and raise a KeyError.
+                    if draft_hash != last_hash or cache_key not in self._draft_cache:
                         logging.info(f"New draft data detected for {draft_id}, updating cache")
                         self._draft_cache[cache_key] = draft_data
-                        self._cache_timestamps[cache_key] = time.time()
                         self._data_cache[f"draft_hash_{draft_id}"] = draft_hash
                     else:
                         logging.info(f"No changes detected for {draft_id}, extending cache")
-                        # Extend cache timestamp even if no changes
-                        self._cache_timestamps[cache_key] = time.time()
-                    
+                    self._cache_timestamps[cache_key] = time.time()
+
                     return self._draft_cache[cache_key]
-                    
-                    logging.info(f"Fetched and cached draft data for {draft_id}")
-                    return draft_data
                 else:
                     logging.error(f"Error fetching draft data for {draft_id}: {response.status_code}")
-                    return []
-                    
+                    return None
+
             except Exception as e:
                 logging.error(f"Exception fetching draft data for {draft_id}: {e}")
-                return []
+                return None
     
     def get_player_info_optimized(self, player_name: str, position: str) -> tuple:
         """Optimized player info lookup using cached data."""
@@ -578,8 +583,8 @@ class DataManager:
         hash_key = f"inflation_draft_hash_{draft_id}"
 
         draft_data = await self.get_draft_data(draft_id)
-        if not draft_data:
-            raise HTTPException(status_code=404, detail="No draft data found")
+        if draft_data is None:
+            raise HTTPException(status_code=404, detail="Could not reach that draft")
         draft_hash = self._create_draft_hash(draft_data)
 
         if cache_key in self._inflation_cache:
@@ -847,8 +852,8 @@ async def clear_cache(cache_type: str = 'all'):
 async def get_picks(draft_id: str = Query(..., description="Sleeper draft ID")):
     """Get raw picks data for a draft with caching."""
     draft_data = await data_manager.get_draft_data(draft_id)
-    if not draft_data:
-        raise HTTPException(status_code=404, detail="No draft data found")
+    if draft_data is None:
+        raise HTTPException(status_code=404, detail="Could not reach that draft")
     return draft_data
 
 @app.get("/picks/count")
@@ -856,7 +861,11 @@ async def get_picks_count(draft_id: str = Query(..., description="Sleeper draft 
     """Get just the pick count for change detection."""
     try:
         picks = await data_manager.get_draft_data(draft_id)
+        if picks is None:
+            raise HTTPException(status_code=404, detail="Could not reach that draft")
         return {"count": len(picks), "last_pick_no": picks[-1].get('pick_no', 0) if picks else 0}
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error getting picks count for {draft_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -889,6 +898,8 @@ async def get_inflation_rate(draft_id: str = Query(..., description="Sleeper dra
     try:
         inflation_data = await data_manager.get_inflation_data(draft_id)
         return sanitize_data(inflation_data)
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error processing draft ID {draft_id}: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while processing the request")
@@ -903,8 +914,8 @@ async def team_breakdown(draft_id: str = Query(..., description="Sleeper draft I
     """Get team breakdown for a draft."""
     try:
         draft_data = await data_manager.get_draft_data(draft_id)
-        if not draft_data:
-            raise HTTPException(status_code=404, detail="No draft data found")
+        if draft_data is None:
+            raise HTTPException(status_code=404, detail="Could not reach that draft")
         
         # Process team breakdown
         team_data = {}
@@ -966,6 +977,8 @@ async def team_breakdown(draft_id: str = Query(..., description="Sleeper draft I
 
         return team_data
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error processing team breakdown for draft ID {draft_id}: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while processing the request")
@@ -975,8 +988,8 @@ async def scatter_data(draft_id: str = Query(..., description="Sleeper draft ID"
     """Get scatter plot data with optimized processing."""
     try:
         draft_data = await data_manager.get_draft_data(draft_id)
-        if not draft_data:
-            raise HTTPException(status_code=404, detail="No draft data found")
+        if draft_data is None:
+            raise HTTPException(status_code=404, detail="Could not reach that draft")
 
         scatter_data = {
             "pick_no": [],
@@ -1004,6 +1017,8 @@ async def scatter_data(draft_id: str = Query(..., description="Sleeper draft ID"
             scatter_data["expected_values"].append(expected_value)
 
         return scatter_data
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error processing scatter data request: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
@@ -1013,8 +1028,8 @@ async def draft_economy(draft_id: str = Query(..., description="Sleeper draft ID
     """Money left in the room against value left on the board."""
     try:
         draft_data = await data_manager.get_draft_data(draft_id)
-        if not draft_data:
-            raise HTTPException(status_code=404, detail="No draft data found")
+        if draft_data is None:
+            raise HTTPException(status_code=404, detail="Could not reach that draft")
         return data_manager.get_draft_economy(draft_data)
     except HTTPException:
         raise
@@ -1085,8 +1100,8 @@ async def get_available_players(draft_id: str, is_live: bool = False):
     """Undrafted players with tiers and values, plus what has already gone."""
     try:
         draft_data = await data_manager.get_draft_data(draft_id)
-        if not draft_data:
-            raise HTTPException(status_code=404, detail="No draft data found")
+        if draft_data is None:
+            raise HTTPException(status_code=404, detail="Could not reach that draft")
         # Off the event loop, so a slow assembly can never stall the ticker's
         # requests the way a blocking async handler would.
         return await run_in_threadpool(_assemble_available_players, draft_data)
