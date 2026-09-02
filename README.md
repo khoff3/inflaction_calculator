@@ -4,13 +4,15 @@ A real-time fantasy football auction draft inflation calculator with enhanced pe
 
 ## 🚀 **Enhanced Features**
 
-- **Enhanced FastAPI Backend**: High-performance async API with smart caching and 2025 data
-- **Real-time Updates**: Adaptive polling with change detection via DataService
+- **Enhanced FastAPI Backend**: High-performance async API with smart caching
+- **Draft Economy**: Forward-looking view of money left against value left, with
+  a per-position demand model — see below
+- **Real-time Updates**: 3-second polling with change detection via DataService
 - **Advanced Analytics**: Trending spend analysis, cost of waiting calculations, and position-based R² analysis
 - **Enhanced ScatterPlot**: Linear regression, cost calculations, and position breakdowns
-- **Smart Caching**: 30-second draft data TTL with change detection
-- **Performance Optimized**: Reduced API calls by ~80% during inactive periods
-- **2025 Data Integration**: Latest fantasy football rankings and auction values
+- **Smart Caching**: 1-second draft TTL so each poll gets fresh picks, with a
+  pick-count endpoint that skips the work entirely when nothing has sold
+- **2026 Data Integration**: ETR standard-scoring auction values and FantasyPros tiers
 - **Player Notes System**: Hybrid localStorage + static JSON notes with targets and priorities
 
 ## 📁 **Project Structure**
@@ -100,11 +102,28 @@ pip install -r requirements_fastapi.txt
 python start_enhanced_backend.py
 ```
 
+## 🧪 **Tests**
+
+```bash
+python3 -m pytest tests/            # backend: mappings, draft economy, board
+cd frontend && CI=true npm test     # frontend: ticker sorting
+```
+
+The backend tests load the real data folder, so they also catch a bad annual
+build — a values file whose names stop matching the rankings will fail
+`test_player_mappings.py` rather than quietly zeroing out expected values.
+
 ## 📅 **Annual Data Update**
 
 Everything the backend reads lives in `backend/<YEAR>/`, and the highest year
 folder wins (`DATA_YEAR=2025` pins an older one). Two raw downloads become that
 folder:
+
+League shape lives in constants at the top of
+`backend/fastapi_backend_enhanced.py` — 12 teams, $200, 16 roster slots, and the
+starter shape the demand model needs. 2026 dropped the kicker, and the roster
+stayed 16 deep, so that seat is treated as bench; `ROSTER_SLOTS=15` overrides it
+if the roster shortened instead.
 
 1. **FantasyPros draft rankings** — the combined ALL-positions export
    (`FantasyPros_<YEAR>_Draft_ALL_Rankings.csv`). FantasyPros stopped shipping
@@ -176,7 +195,8 @@ checked-in snapshot of one draft's picks.
 - `POST /cache/clear` - Clear cache manually
 - `POST /player_lookup` - Fuzzy player name matching
 - `GET /draft_notes` - Global and draft-specific player notes
-- `GET /available_players` - Available players with tier and position data
+- `GET /available_players` - Available and drafted players with tier, positional rank and value
+- `GET /draft_economy` - Money left vs value left, per-position demand, per-team wallets
 
 ## 🔧 **Frontend Components**
 
@@ -186,10 +206,20 @@ checked-in snapshot of one draft's picks.
 - **Position Breakdown**: Average spend, min/max, and R² by position
 - **Interactive Visualizations**: Plotly.js integration with responsive design
 
-### EnhancedTicker
-- **Advanced Caching**: Smart caching with localStorage persistence
+### Ticker
+- **Sortable Columns**: Pick, team, player, position, price, EP, DOE, inflation, tier
 - **Real-time Updates**: DataService integration for live updates
-- **Performance Optimized**: Reduced API calls with change detection
+- **Sorting Rules**: Money sorts numerically (Sleeper sends prices as strings),
+  players the sheet doesn't price sort last rather than as $0, and ties fall
+  back to newest first
+
+### DraftEconomy
+- **Headline Multiplier**: Spendable cash over buyable value, both measured
+  above the $1 floor, so roster filler doesn't drag the number toward 1.00
+- **Positional Demand**: Each team's spendable money split across the starter
+  slots it still needs, weighted by the going rate at that position. Divided by
+  the value left there, it says which positions will run over sheet
+- **Team Wallets**: Spent, left, open slots, max bid and remaining needs
 
 ### DataService
 - **Centralized Management**: Single source of truth for all data operations
@@ -208,11 +238,14 @@ checked-in snapshot of one draft's picks.
 ## 🚀 **Performance Optimizations**
 
 1. **Smart Caching**: Hash-based change detection with TTL
-2. **Adaptive Polling**: 30-second draft data cache with change detection
-3. **Differential Updates**: Lightweight change detection endpoint
-4. **Optimized Lookups**: Pre-built lookup tables and fuzzy matching
-5. **Memory Efficiency**: In-memory caching with automatic cleanup
-6. **Parallel Processing**: Async operations with thread pool support
+2. **Adaptive Polling**: 3-second poll against a 1-second cache, short-circuited
+   by a pick-count check when nothing has sold
+3. **Prebuilt Board**: Tiers resolved once at load rather than per request,
+   which took `/available_players` from ~450ms to ~13ms
+4. **Differential Updates**: Lightweight change detection endpoint
+5. **Optimized Lookups**: Pre-built lookup tables and fuzzy matching
+6. **Memory Efficiency**: In-memory caching with automatic cleanup
+7. **Parallel Processing**: Async operations with thread pool support
 
 ## 📈 **Analytics Features**
 
