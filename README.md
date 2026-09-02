@@ -120,10 +120,9 @@ folder wins (`DATA_YEAR=2025` pins an older one). Two raw downloads become that
 folder:
 
 League shape lives in constants at the top of
-`backend/fastapi_backend_enhanced.py` — 12 teams, $200, 16 roster slots, and the
-starter shape the demand model needs. 2026 dropped the kicker, and the roster
-stayed 16 deep, so that seat is treated as bench; `ROSTER_SLOTS=15` overrides it
-if the roster shortened instead.
+`backend/fastapi_backend_enhanced.py` — 12 teams, $200, 15 roster slots (2026
+dropped the kicker and the roster shortened with it), and the starter shape the
+demand model needs. `ROSTER_SLOTS` overrides the depth if it changes again.
 
 1. **FantasyPros draft rankings** — the combined ALL-positions export
    (`FantasyPros_<YEAR>_Draft_ALL_Rankings.csv`). FantasyPros stopped shipping

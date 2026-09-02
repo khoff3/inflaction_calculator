@@ -74,9 +74,11 @@ def to_dollars(raw_value) -> float:
 # team_breakdown, which predates these constants.
 LEAGUE_TEAMS = 12
 LEAGUE_BUDGET = 200
-# 2026 dropped the kicker slot. The roster stayed 16 deep, so that seat became
-# bench; ROSTER_SLOTS overrides it if the league shortened the roster instead.
-ROSTER_SLOTS = int(os.environ.get('ROSTER_SLOTS', 16))
+# 2026 dropped the kicker slot and the roster shortened with it: 1QB 2RB 3WR
+# 1TE 1FLEX 1DEF starters plus 6 bench. This is the denominator for every open
+# slot, so it decides how much of the pot is reserved as $1 filler and how many
+# players are still buyable - ROSTER_SLOTS overrides it if the shape changes.
+ROSTER_SLOTS = int(os.environ.get('ROSTER_SLOTS', 15))
 
 # Kickers are not rostered in 2026, so they are dropped from the board entirely
 # rather than sitting there as undraftable value. They were worth $1 of
